@@ -37,6 +37,9 @@
       }
     }
   },
+  "bin": {
+    "sonzai-openclaw": "./dist/cli.js"
+  },
   "files": ["dist", "LICENSE", "README.md"],
   "scripts": {
     "build": "tsup",

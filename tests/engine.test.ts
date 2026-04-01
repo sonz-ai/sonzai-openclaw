@@ -14,47 +14,32 @@ function createMockClient() {
         start: vi.fn().mockResolvedValue({ session_id: "sess-1" }),
         end: vi.fn().mockResolvedValue({ session_id: "sess-1" }),
       },
-      memory: {
-        search: vi.fn().mockResolvedValue({
-          results: [
-            { fact_id: "f1", content: "User likes coffee", fact_type: "preference", score: 0.9 },
-          ],
-        }),
-      },
-      personality: {
-        get: vi.fn().mockResolvedValue({
-          profile: {
-            agent_id: "agent-123",
-            name: "TestAgent",
-            gender: "neutral",
-            bio: "A test agent",
-            avatar_url: "",
-            personality_prompt: "",
-            speech_patterns: [],
-            true_interests: [],
-            true_dislikes: [],
-            primary_traits: ["helpful"],
-            temperature: 0.7,
-            big5: {
-              openness: { score: 70, percentile: 70 },
-              conscientiousness: { score: 60, percentile: 60 },
-              extraversion: { score: 50, percentile: 50 },
-              agreeableness: { score: 80, percentile: 80 },
-              neuroticism: { score: 30, percentile: 30 },
-            },
-            dimensions: { warmth: 8, energy: 6, openness: 7, emotional_depth: 7, playfulness: 5, supportiveness: 8, curiosity: 7, wisdom: 6 },
-            preferences: { pace: "moderate", formality: "casual", humor_style: "warm", emotional_expression: "moderate" },
-            behaviors: { proactivity: "moderate", reliability: "high", humor: "warm" },
-          },
-          evolution: [],
-        }),
-      },
-      getMood: vi.fn().mockResolvedValue({ happiness: 7, energy: 6 }),
-      getRelationships: vi.fn().mockResolvedValue({ closeness: 0.5 }),
-      getGoals: vi.fn().mockResolvedValue({ goals: [] }),
-      getInterests: vi.fn().mockResolvedValue({ photography: "high" }),
-      getHabits: vi.fn().mockResolvedValue({ meditation: "daily" }),
+      getContext: vi.fn().mockResolvedValue({
+        personality_prompt: "You are a helpful agent",
+        speech_patterns: ["uses metaphors"],
+        true_interests: ["coffee", "hiking"],
+        primary_traits: ["helpful", "curious"],
+        big5: {
+          openness: { score: 70 },
+          conscientiousness: { score: 60 },
+          extraversion: { score: 50 },
+          agreeableness: { score: 80 },
+          neuroticism: { score: 30 },
+        },
+        preferences: { pace: "moderate", formality: "casual", humor_style: "warm" },
+        current_mood: { valence: 7, arousal: 5, tension: 3, affiliation: 6 },
+        relationship_narrative: "Friendly acquaintances",
+        love_from_agent: 50,
+        love_from_user: 45,
+        loaded_facts: [
+          { atomic_text: "User likes coffee", fact_type: "preference" },
+        ],
+        active_goals: [],
+        habits: [],
+        game_context: {},
+      }),
       consolidate: vi.fn().mockResolvedValue({}),
+      process: vi.fn().mockResolvedValue({ success: true, memories_created: 2, facts_extracted: 3, side_effects: { mood_updated: true, personality_updated: false, habits_observed: 0, interests_detected: 1 } }),
     },
   } as unknown;
 }
@@ -68,6 +53,8 @@ function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     defaultUserId: "owner",
     contextTokenBudget: 2000,
     disable: {},
+    extractionProvider: undefined,
+    extractionModel: undefined,
     ...overrides,
   };
 }
@@ -118,9 +105,9 @@ describe("SonzaiContextEngine", () => {
 
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
 
-      // Name includes the OpenClaw agent segment for uniqueness across instances
+      // Uses config.agentName (stable across restarts/pods, not runtime-derived)
       expect((client as any).agents.create).toHaveBeenCalledWith({
-        name: "test-agent-abc",
+        name: "test-agent",
       });
     });
 
@@ -176,43 +163,19 @@ describe("SonzaiContextEngine", () => {
       expect(result.systemPromptAddition).toContain("User likes coffee");
       expect(result.estimatedTokens).toBeGreaterThan(0);
 
-      // Verify parallel fetches were made
-      expect((client as any).agents.memory.search).toHaveBeenCalled();
-      expect((client as any).agents.getMood).toHaveBeenCalled();
-      expect((client as any).agents.personality.get).toHaveBeenCalled();
-      expect((client as any).agents.getRelationships).toHaveBeenCalled();
-      expect((client as any).agents.getGoals).toHaveBeenCalled();
-    });
-
-    it("skips disabled context sources", async () => {
-      engine = new SonzaiContextEngine(
-        client as any,
-        createConfig({ disable: { mood: true, habits: true, interests: true } }),
+      // Verify single getContext call was made (replaces 7 individual calls)
+      expect((client as any).agents.getContext).toHaveBeenCalledOnce();
+      expect((client as any).agents.getContext).toHaveBeenCalledWith(
+        "agent-123",
+        expect.objectContaining({
+          userId: "owner",
+          query: "Tell me about coffee",
+        }),
       );
-
-      await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
-      await engine.assemble({
-        sessionId: "agent:abc:mainKey",
-        messages: [{ role: "user", content: "hello" }],
-        tokenBudget: 2000,
-      });
-
-      expect((client as any).agents.getMood).not.toHaveBeenCalled();
-      expect((client as any).agents.getHabits).not.toHaveBeenCalled();
-      expect((client as any).agents.getInterests).not.toHaveBeenCalled();
-      // These should still be called
-      expect((client as any).agents.memory.search).toHaveBeenCalled();
-      expect((client as any).agents.personality.get).toHaveBeenCalled();
     });
 
     it("degrades gracefully when API calls fail", async () => {
-      (client as any).agents.memory.search.mockRejectedValue(new Error("timeout"));
-      (client as any).agents.getMood.mockRejectedValue(new Error("timeout"));
-      (client as any).agents.personality.get.mockRejectedValue(new Error("timeout"));
-      (client as any).agents.getRelationships.mockRejectedValue(new Error("timeout"));
-      (client as any).agents.getGoals.mockRejectedValue(new Error("timeout"));
-      (client as any).agents.getInterests.mockRejectedValue(new Error("timeout"));
-      (client as any).agents.getHabits.mockRejectedValue(new Error("timeout"));
+      (client as any).agents.getContext.mockRejectedValue(new Error("timeout"));
 
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
 
@@ -250,7 +213,7 @@ describe("SonzaiContextEngine", () => {
   });
 
   describe("afterTurn", () => {
-    it("sends new messages to sessions.end", async () => {
+    it("calls process() with new messages", async () => {
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
 
       // Simulate an assemble call first (which sets lastMessages)
@@ -264,17 +227,15 @@ describe("SonzaiContextEngine", () => {
         tokenBudget: 2000,
       });
 
-      // Reset the end mock after bootstrap
-      (client as any).agents.sessions.end.mockClear();
+      (client as any).agents.process.mockClear();
 
       await engine.afterTurn({ sessionId: "agent:abc:mainKey" });
 
-      expect((client as any).agents.sessions.end).toHaveBeenCalledWith(
+      expect((client as any).agents.process).toHaveBeenCalledWith(
         "agent-123",
         expect.objectContaining({
           userId: "owner",
           sessionId: "agent:abc:mainKey",
-          totalMessages: 1,
           messages: [
             { role: "user", content: "hello" },
             { role: "assistant", content: "hi there" },
@@ -283,14 +244,14 @@ describe("SonzaiContextEngine", () => {
       );
     });
 
-    it("does not call sessions.end when no new messages", async () => {
+    it("does not call process when no new messages", async () => {
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
-      (client as any).agents.sessions.end.mockClear();
+      (client as any).agents.process.mockClear();
 
       // afterTurn without any assemble (no messages)
       await engine.afterTurn({ sessionId: "agent:abc:mainKey" });
 
-      expect((client as any).agents.sessions.end).not.toHaveBeenCalled();
+      expect((client as any).agents.process).not.toHaveBeenCalled();
     });
   });
 

@@ -3,9 +3,9 @@
  * Sonzai Mind Layer API via @sonzai-labs/agents.
  */
 
-import type { Sonzai, PersonalityResponse } from "@sonzai-labs/agents";
+import type { Sonzai } from "@sonzai-labs/agents";
 import { SessionCache } from "./cache.js";
-import { buildSystemPromptAddition, estimateTokens } from "./context-builder.js";
+import { buildSystemPromptFromContext, estimateTokens } from "./context-builder.js";
 import type { ResolvedConfig } from "./config.js";
 import { parseSessionKey } from "./session-key.js";
 import type {
@@ -23,7 +23,7 @@ import type {
 } from "./types.js";
 
 // Cache TTLs
-const PERSONALITY_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Profile/behavioral caching is now handled server-side by Redis layer caches.
 const AGENT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
 export class SonzaiContextEngine implements ContextEngine {
@@ -34,7 +34,6 @@ export class SonzaiContextEngine implements ContextEngine {
   };
 
   private readonly sessions = new Map<string, SessionState>();
-  private readonly personalityCache = new SessionCache<PersonalityResponse>(PERSONALITY_CACHE_TTL);
   private readonly agentCache = new SessionCache<string>(AGENT_CACHE_TTL);
 
   constructor(
@@ -101,7 +100,6 @@ export class SonzaiContextEngine implements ContextEngine {
       const { agentId, userId } = session;
       const lastUserMsg = findLastUserMessage(messages);
       const budget = Math.min(tokenBudget, this.config.contextTokenBudget);
-      const disable = this.config.disable;
 
       // Resolve userId for group chats: prefer origin.from if available
       const effectiveUserId =
@@ -109,50 +107,19 @@ export class SonzaiContextEngine implements ContextEngine {
           ? `${origin.provider}:${origin.from}`
           : userId;
 
-      // Fire all context fetches in parallel — any failure is non-fatal
-      const [
-        memoriesResult,
-        moodResult,
-        personalityResult,
-        relationshipsResult,
-        goalsResult,
-        interestsResult,
-        habitsResult,
-      ] = await Promise.allSettled([
-        !disable.memory && lastUserMsg
-          ? this.client.agents.memory.search(agentId, { query: lastUserMsg })
-          : Promise.resolve(undefined),
-        !disable.mood
-          ? this.client.agents.getMood(agentId, { userId: effectiveUserId })
-          : Promise.resolve(undefined),
-        !disable.personality
-          ? this.getCachedPersonality(agentId)
-          : Promise.resolve(undefined),
-        !disable.relationships
-          ? this.client.agents.getRelationships(agentId, { userId: effectiveUserId })
-          : Promise.resolve(undefined),
-        !disable.goals
-          ? this.client.agents.getGoals(agentId, { userId: effectiveUserId })
-          : Promise.resolve(undefined),
-        !disable.interests
-          ? this.client.agents.getInterests(agentId, { userId: effectiveUserId })
-          : Promise.resolve(undefined),
-        !disable.habits
-          ? this.client.agents.getHabits(agentId, { userId: effectiveUserId })
-          : Promise.resolve(undefined),
-      ]);
+      // Single API call replaces 7 parallel calls — server-side caching
+      // handles profile (5min), behavioral (30s), constellation (5min),
+      // and memory (2h session cache) acceleration.
+      const context = await this.client.agents.getContext(agentId, {
+        userId: effectiveUserId,
+        sessionId: session.sonzaiSessionId,
+        query: lastUserMsg,
+      });
 
-      const systemPromptAddition = buildSystemPromptAddition(
-        {
-          memories: settled(memoriesResult),
-          mood: settled(moodResult),
-          personality: settled(personalityResult),
-          relationships: settled(relationshipsResult),
-          goals: settled(goalsResult),
-          interests: settled(interestsResult),
-          habits: settled(habitsResult),
-        },
+      const systemPromptAddition = buildSystemPromptFromContext(
+        context,
         budget,
+        this.config.disable,
       );
 
       return {
@@ -202,15 +169,15 @@ export class SonzaiContextEngine implements ContextEngine {
 
       if (newMessages.length === 0) return;
 
-      await this.client.agents.sessions.end(session.agentId, {
+      await this.client.agents.process(session.agentId, {
         userId: session.userId,
         sessionId: session.sonzaiSessionId,
-        totalMessages: session.turnCount,
-        durationSeconds: Math.floor((Date.now() - session.startedAt) / 1000),
         messages: newMessages.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: m.content,
         })),
+        provider: this.config.extractionProvider,
+        model: this.config.extractionModel,
       });
     } catch (err) {
       console.warn("[@sonzai-labs/openclaw-context] afterTurn failed:", err);
@@ -241,7 +208,6 @@ export class SonzaiContextEngine implements ContextEngine {
 
     await Promise.allSettled(endPromises);
     this.sessions.clear();
-    this.personalityCache.clear();
     this.agentCache.clear();
   }
 
@@ -283,27 +249,11 @@ export class SonzaiContextEngine implements ContextEngine {
     return agent.agent_id;
   }
 
-  /**
-   * Get personality with caching to avoid per-turn re-fetches.
-   */
-  private async getCachedPersonality(agentId: string): Promise<PersonalityResponse> {
-    const cached = this.personalityCache.get(agentId);
-    if (cached) return cached;
-
-    const personality = await this.client.agents.personality.get(agentId);
-    this.personalityCache.set(agentId, personality);
-    return personality;
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
-
-/** Extract the fulfilled value from a settled promise, or undefined. */
-function settled<T>(result: PromiseSettledResult<T>): T | undefined {
-  return result.status === "fulfilled" ? result.value : undefined;
-}
 
 /** Find the last user message content from the conversation. */
 function findLastUserMessage(messages: MessageItem[]): string | undefined {

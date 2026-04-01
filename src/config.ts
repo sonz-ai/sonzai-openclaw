@@ -36,6 +36,10 @@ export interface SonzaiPluginConfig {
   contextTokenBudget?: number;
   /** Selectively disable context sources. */
   disable?: DisableMap;
+  /** LLM provider for side-effect extraction (e.g. "gemini", "openai"). Uses platform default if omitted. */
+  extractionProvider?: string;
+  /** LLM model for side-effect extraction (e.g. "gemini-2.5-flash"). Uses platform default if omitted. */
+  extractionModel?: string;
 }
 
 export interface ResolvedConfig {
@@ -46,6 +50,8 @@ export interface ResolvedConfig {
   defaultUserId: string;
   contextTokenBudget: number;
   disable: DisableMap;
+  extractionProvider: string | undefined;
+  extractionModel: string | undefined;
 }
 
 const DEFAULTS = {
@@ -79,6 +85,8 @@ export function resolveConfig(raw?: Partial<SonzaiPluginConfig>): ResolvedConfig
     defaultUserId: raw?.defaultUserId || DEFAULTS.defaultUserId,
     contextTokenBudget: raw?.contextTokenBudget ?? DEFAULTS.contextTokenBudget,
     disable: raw?.disable ?? {},
+    extractionProvider: raw?.extractionProvider || env("SONZAI_EXTRACTION_PROVIDER") || undefined,
+    extractionModel: raw?.extractionModel || env("SONZAI_EXTRACTION_MODEL") || undefined,
   };
 }
 

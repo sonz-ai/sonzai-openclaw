@@ -4,6 +4,7 @@
  */
 
 import type {
+  EnrichedContextResponse,
   GoalsResponse,
   HabitsResponse,
   InterestsResponse,
@@ -244,4 +245,119 @@ function formatHabits(data: unknown): string | null {
   }
 
   return lines.length > 1 ? lines.join("\n") : null;
+}
+
+// ---------------------------------------------------------------------------
+// Single-call context builder (from EnrichedContextResponse)
+// ---------------------------------------------------------------------------
+
+interface DisableConfig {
+  personality?: boolean;
+  mood?: boolean;
+  relationships?: boolean;
+  memory?: boolean;
+  goals?: boolean;
+  interests?: boolean;
+  habits?: boolean;
+}
+
+/**
+ * Build the systemPromptAddition from a single EnrichedContextResponse
+ * (returned by GET /agents/{id}/context). Single network call replaces 7.
+ */
+export function buildSystemPromptFromContext(
+  ctx: EnrichedContextResponse,
+  tokenBudget: number,
+  disable: DisableConfig = {},
+): string {
+  const sections: { key: string; text: string; priority: number }[] = [];
+
+  if (!disable.personality && ctx.personality_prompt) {
+    const lines = ["## Personality"];
+    lines.push(`Character: ${ctx.personality_prompt}`);
+    if (ctx.primary_traits?.length) lines.push(`Traits: ${ctx.primary_traits.join(", ")}`);
+    if (ctx.speech_patterns?.length) lines.push(`Speech patterns: ${ctx.speech_patterns.join(", ")}`);
+    if (ctx.big5) {
+      const b5 = ctx.big5 as Record<string, Record<string, number>>;
+      const traits = ["openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"]
+        .map((t) => `${t[0]!.toUpperCase()}:${b5[t]?.score ?? "?"}`)
+        .join(" ");
+      lines.push(`Big5: ${traits}`);
+    }
+    sections.push({ key: "personality", text: lines.join("\n"), priority: 7 });
+  }
+
+  if (!disable.memory) {
+    const facts = ctx.loaded_facts;
+    if (facts?.length) {
+      const lines = ["## Relevant Memories"];
+      for (const f of facts.slice(0, 10)) {
+        const text = (f.atomic_text as string) || (f.content as string) || JSON.stringify(f);
+        lines.push(`- ${text}`);
+      }
+      sections.push({ key: "memories", text: lines.join("\n"), priority: 6 });
+    }
+  }
+
+  if (!disable.mood && ctx.current_mood) {
+    const mood = ctx.current_mood;
+    const lines = ["## Current Mood"];
+    for (const [key, value] of Object.entries(mood)) {
+      if (key.startsWith("_") || value === null || value === undefined) continue;
+      lines.push(`${key}: ${typeof value === "object" ? JSON.stringify(value) : value}`);
+    }
+    if (lines.length > 1) sections.push({ key: "mood", text: lines.join("\n"), priority: 5 });
+  }
+
+  if (!disable.relationships && ctx.relationship_narrative) {
+    const lines = ["## Relationship"];
+    lines.push(ctx.relationship_narrative);
+    if (ctx.love_from_agent !== undefined) lines.push(`Love (agent->user): ${ctx.love_from_agent}`);
+    if (ctx.love_from_user !== undefined) lines.push(`Love (user->agent): ${ctx.love_from_user}`);
+    if (ctx.relationship_status) lines.push(`Status: ${ctx.relationship_status}`);
+    sections.push({ key: "relationships", text: lines.join("\n"), priority: 4 });
+  }
+
+  if (!disable.goals) {
+    const goals = ctx.active_goals as Array<Record<string, unknown>> | undefined;
+    if (goals?.length) {
+      const lines = ["## Goals"];
+      for (const g of goals.slice(0, 5)) {
+        lines.push(`- ${g.title}: ${g.description} [${g.type}]`);
+      }
+      sections.push({ key: "goals", text: lines.join("\n"), priority: 3 });
+    }
+  }
+
+  if (!disable.interests && ctx.true_interests?.length) {
+    sections.push({ key: "interests", text: `## Interests\n${ctx.true_interests.join(", ")}`, priority: 2 });
+  }
+
+  if (!disable.habits) {
+    const ctxHabits = ctx.habits as Array<Record<string, unknown>> | undefined;
+    if (ctxHabits?.length) {
+      const lines = ["## Habits"];
+      for (const h of ctxHabits.slice(0, 5)) {
+        lines.push(`- ${h.name}: ${h.description || h.category || ""}`);
+      }
+      sections.push({ key: "habits", text: lines.join("\n"), priority: 1 });
+    }
+  }
+
+  if (sections.length === 0) return "";
+
+  sections.sort((a, b) => b.priority - a.priority);
+  let result = "<sonzai-context>\n" + sections.map((s) => s.text).join("\n\n") + "\n</sonzai-context>";
+
+  while (estimateTokens(result) > tokenBudget && sections.length > 1) {
+    sections.pop();
+    result = "<sonzai-context>\n" + sections.map((s) => s.text).join("\n\n") + "\n</sonzai-context>";
+  }
+
+  if (estimateTokens(result) > tokenBudget) {
+    const maxChars = tokenBudget * 4;
+    result = result.slice(0, maxChars) + "\n[...truncated]\n</sonzai-context>";
+  }
+
+  return result;
 }

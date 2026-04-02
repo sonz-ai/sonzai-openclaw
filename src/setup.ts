@@ -144,13 +144,10 @@ export async function interactiveSetup(): Promise<void> {
     mergeOpenClawConfig(resolvedPath, result.config);
     console.log(`\nConfig written to ${path.resolve(resolvedPath)}`);
 
-    // Step 5: Env var hint
+    // Step 5: Done
     console.log("\n--- Setup Complete ---\n");
-    console.log("Set your API key as an environment variable (recommended):\n");
-    console.log(`  export SONZAI_API_KEY="${apiKey.trim()}"\n`);
-    console.log("Or add it to your shell profile (~/.bashrc, ~/.zshrc).\n");
     console.log(
-      "The agent ID is saved in openclaw.json — no need to set SONZAI_AGENT_ID.\n",
+      "Your API key and agent ID are saved in openclaw.json — no environment variables needed.\n",
     );
   } finally {
     rl.close();
@@ -162,7 +159,7 @@ export async function interactiveSetup(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function buildOpenClawConfig(
-  _apiKey: string,
+  apiKey: string,
   agentId: string,
 ): Record<string, unknown> {
   return {
@@ -173,9 +170,8 @@ function buildOpenClawConfig(
       entries: {
         sonzai: {
           enabled: true,
+          apiKey,
           agentId,
-          // apiKey is intentionally NOT written to the config file —
-          // it should be set via SONZAI_API_KEY env var for security.
         },
       },
     },

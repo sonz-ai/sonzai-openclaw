@@ -17,22 +17,15 @@ npx @sonzai-labs/openclaw-context setup
 The setup wizard will:
 1. Ask for your Sonzai API key (or detect `SONZAI_API_KEY` from env)
 2. Ask if you have an existing agent ID, or create one for you
-3. Write the plugin config to your `openclaw.json`
-4. Show you the env var to add to your shell profile
+3. Write your API key and plugin config to `openclaw.json`
 
-That's it — restart OpenClaw and your agent has persistent memory.
+That's it — restart OpenClaw and your agent has persistent memory. No environment variables needed.
 
 ### Manual Setup
 
 ```bash
 # 1. Install
 openclaw plugins install @sonzai-labs/openclaw-context
-
-# 2. Set your API key
-export SONZAI_API_KEY="sk-your-api-key"
-
-# 3. Optionally set a specific agent (otherwise auto-provisioned)
-export SONZAI_AGENT_ID="your-agent-uuid"
 ```
 
 Add to your `openclaw.json`:
@@ -46,12 +39,15 @@ Add to your `openclaw.json`:
     "entries": {
       "sonzai": {
         "enabled": true,
-        "agentId": "your-agent-uuid"  // optional
+        "apiKey": "sk-your-api-key",
+        "agentId": "your-agent-uuid"  // optional — auto-provisioned if omitted
       }
     }
   }
 }
 ```
+
+`openclaw.json` acts as your config file — no environment variables needed.
 
 ## B2B Integration (Programmatic Setup)
 
@@ -96,8 +92,11 @@ The agent ID is deterministic: `SHA1(tenantID + agentName)`. As long as your
 config has the same API key + agent name (or explicit agent ID), pods can
 restart, scale, or be replaced without creating duplicate agents.
 
+For containerized environments, you can either bake the API key into `openclaw.json`
+or use env vars as overrides (useful for secrets management):
+
 ```yaml
-# Example: K8s deployment env vars
+# Example: K8s deployment — env var overrides openclaw.json
 env:
   - name: SONZAI_API_KEY
     valueFrom:
@@ -110,7 +109,7 @@ env:
 
 ### Config-Only (No Env Vars)
 
-If you prefer not to use env vars, pass everything through `openclaw.json`:
+Everything can live in `openclaw.json` — no env vars required:
 
 ```typescript
 const result = await setup({
@@ -119,8 +118,7 @@ const result = await setup({
   writeConfig: true,
   configPath: "./openclaw.json",
 });
-// API key is NOT written to the file (security) — only agentId is persisted.
-// The key must be set via SONZAI_API_KEY at runtime.
+// API key and agent ID are both written to openclaw.json.
 ```
 
 ## How It Works
@@ -179,8 +177,10 @@ To get **separate** agents under one API key, use different `agentName` values.
 
 ## Full Configuration Reference
 
-| Setting | Env Var | Default | Description |
-|---------|---------|---------|-------------|
+All settings go in `openclaw.json` under `plugins.entries.sonzai`. Environment variables are supported as overrides.
+
+| Setting | Env Var Override | Default | Description |
+|---------|-----------------|---------|-------------|
 | `apiKey` | `SONZAI_API_KEY` | *required* | Sonzai API key |
 | `agentId` | `SONZAI_AGENT_ID` | auto-provision | Pre-provisioned agent UUID |
 | `baseUrl` | `SONZAI_BASE_URL` | `https://api.sonz.ai` | API base URL |

@@ -1,7 +1,13 @@
 /**
  * Plugin configuration — maps to `plugins.entries.sonzai` in openclaw.json
  * or environment variables.
+ *
+ * openclaw.json acts as the primary config source (like a .env file).
+ * Environment variables are supported as an override / fallback.
  */
+
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 export interface DisableMap {
   mood?: boolean;
@@ -62,31 +68,58 @@ const DEFAULTS = {
 } as const;
 
 /**
- * Resolve configuration from explicit config, then fall back to env vars.
+ * Read the `plugins.entries.sonzai` section from openclaw.json.
+ * Returns an empty object if the file doesn't exist or can't be parsed.
  */
-export function resolveConfig(raw?: Partial<SonzaiPluginConfig>): ResolvedConfig {
+export function readFileConfig(configPath?: string): Partial<SonzaiPluginConfig> {
+  const resolved = path.resolve(configPath || "./openclaw.json");
+  try {
+    if (!fs.existsSync(resolved)) return {};
+    const raw = JSON.parse(fs.readFileSync(resolved, "utf-8"));
+    const entry = raw?.plugins?.entries?.sonzai;
+    return entry && typeof entry === "object" ? entry : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Resolve configuration from explicit config, then openclaw.json, then env vars.
+ *
+ * Precedence (highest to lowest):
+ *   1. Explicit `raw` config object (programmatic usage)
+ *   2. openclaw.json `plugins.entries.sonzai` section
+ *   3. Environment variables (SONZAI_API_KEY, etc.)
+ */
+export function resolveConfig(
+  raw?: Partial<SonzaiPluginConfig>,
+  configPath?: string,
+): ResolvedConfig {
+  const file = readFileConfig(configPath);
+
   const apiKey =
     raw?.apiKey ||
+    file.apiKey ||
     env("SONZAI_API_KEY") ||
     env("SONZAI_OPENCLAW_API_KEY");
 
   if (!apiKey) {
     throw new Error(
       "[@sonzai-labs/openclaw-context] Missing API key. " +
-      "Set apiKey in plugin config or SONZAI_API_KEY environment variable.",
+      "Set apiKey in openclaw.json, plugin config, or SONZAI_API_KEY environment variable.",
     );
   }
 
   return {
     apiKey,
-    agentId: raw?.agentId || env("SONZAI_AGENT_ID") || undefined,
-    baseUrl: raw?.baseUrl || env("SONZAI_BASE_URL") || DEFAULTS.baseUrl,
-    agentName: raw?.agentName || env("SONZAI_AGENT_NAME") || DEFAULTS.agentName,
-    defaultUserId: raw?.defaultUserId || DEFAULTS.defaultUserId,
-    contextTokenBudget: raw?.contextTokenBudget ?? DEFAULTS.contextTokenBudget,
-    disable: raw?.disable ?? {},
-    extractionProvider: raw?.extractionProvider || env("SONZAI_EXTRACTION_PROVIDER") || undefined,
-    extractionModel: raw?.extractionModel || env("SONZAI_EXTRACTION_MODEL") || undefined,
+    agentId: raw?.agentId || file.agentId || env("SONZAI_AGENT_ID") || undefined,
+    baseUrl: raw?.baseUrl || file.baseUrl || env("SONZAI_BASE_URL") || DEFAULTS.baseUrl,
+    agentName: raw?.agentName || file.agentName || env("SONZAI_AGENT_NAME") || DEFAULTS.agentName,
+    defaultUserId: raw?.defaultUserId || file.defaultUserId || DEFAULTS.defaultUserId,
+    contextTokenBudget: raw?.contextTokenBudget ?? file.contextTokenBudget ?? DEFAULTS.contextTokenBudget,
+    disable: raw?.disable ?? file.disable ?? {},
+    extractionProvider: raw?.extractionProvider || file.extractionProvider || env("SONZAI_EXTRACTION_PROVIDER") || undefined,
+    extractionModel: raw?.extractionModel || file.extractionModel || env("SONZAI_EXTRACTION_MODEL") || undefined,
   };
 }
 

@@ -79,10 +79,25 @@ export interface ContextEngine {
   dispose(): Promise<void>;
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;
+  execute: (id: string, params: Record<string, unknown>) => Promise<ToolResult>;
+}
+
+export interface ToolResult {
+  content: { type: string; text: string }[];
+}
+
 export interface PluginAPI {
   registerContextEngine(
     id: string,
     factory: () => ContextEngine,
+  ): void;
+  registerTool?(
+    definition: ToolDefinition,
+    flags?: { optional?: boolean },
   ): void;
 }
 

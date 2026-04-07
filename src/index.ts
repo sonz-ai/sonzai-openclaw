@@ -14,6 +14,8 @@ export type {
   ContextEngine,
   ContextEngineInfo,
   PluginAPI,
+  ToolDefinition,
+  ToolResult,
   AssembleResult,
   BootstrapArgs,
   IngestArgs,

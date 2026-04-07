@@ -17,6 +17,7 @@ export interface DisableMap {
   goals?: boolean;
   interests?: boolean;
   habits?: boolean;
+  knowledge?: boolean;
 }
 
 export interface SonzaiPluginConfig {

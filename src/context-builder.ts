@@ -259,6 +259,7 @@ interface DisableConfig {
   goals?: boolean;
   interests?: boolean;
   habits?: boolean;
+  knowledge?: boolean;
 }
 
 /**
@@ -271,6 +272,20 @@ export function buildSystemPromptFromContext(
   disable: DisableConfig = {},
 ): string {
   const sections: { key: string; text: string; priority: number }[] = [];
+
+  if (!disable.knowledge) {
+    const kb = ctx.knowledge as { results?: Array<{ content: string; label?: string; type?: string; source?: string; score?: number }> } | undefined;
+    if (kb?.results?.length) {
+      const lines = ["## Knowledge Base"];
+      for (const r of kb.results) {
+        const header = r.label || "Reference";
+        const source = r.source ? ` [source: ${r.source}]` : "";
+        lines.push(`### ${header}${source}`);
+        lines.push(r.content);
+      }
+      sections.push({ key: "knowledge", text: lines.join("\n"), priority: 8 });
+    }
+  }
 
   if (!disable.personality && ctx.personality_prompt) {
     const lines = ["## Personality"];

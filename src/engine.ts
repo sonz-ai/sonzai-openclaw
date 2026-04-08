@@ -110,10 +110,12 @@ export class SonzaiContextEngine implements ContextEngine {
       // Single API call replaces 7 parallel calls — server-side caching
       // handles profile (5min), behavioral (30s), constellation (5min),
       // and memory (2h session cache) acceleration.
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const context = await this.client.agents.getContext(agentId, {
         userId: effectiveUserId,
         sessionId: session.sonzaiSessionId,
         query: lastUserMsg,
+        timezone,
       });
 
       const systemPromptAddition = buildSystemPromptFromContext(

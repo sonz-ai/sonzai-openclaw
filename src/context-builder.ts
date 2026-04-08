@@ -273,6 +273,25 @@ export function buildSystemPromptFromContext(
 ): string {
   const sections: { key: string; text: string; priority: number }[] = [];
 
+  // Always inject current date/time and timezone (priority 10 — never truncated).
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const now = new Date();
+  const dateTimeStr = now.toLocaleString("en-US", {
+    timeZone: timezone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  sections.push({
+    key: "time",
+    text: `## Current Time\n${dateTimeStr} (${timezone})`,
+    priority: 10,
+  });
+
   if (!disable.knowledge) {
     const kb = ctx.knowledge as { results?: Array<{ content: string; label?: string; type?: string; source?: string; score?: number }> } | undefined;
     if (kb?.results?.length) {

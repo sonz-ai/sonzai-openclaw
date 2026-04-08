@@ -54,7 +54,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
-    "@sonzai-labs/agents": "^1.0.7",
+    "@sonzai-labs/agents": "^1.0.9",
     "@types/node": "^25.5.0",
     "msw": "^2.12.14",
     "tsup": "^8.5.1",

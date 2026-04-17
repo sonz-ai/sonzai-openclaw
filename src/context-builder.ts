@@ -312,11 +312,15 @@ export function buildSystemPromptFromContext(
     if (ctx.primary_traits?.length) lines.push(`Traits: ${ctx.primary_traits.join(", ")}`);
     if (ctx.speech_patterns?.length) lines.push(`Speech patterns: ${ctx.speech_patterns.join(", ")}`);
     if (ctx.big5) {
-      const b5 = ctx.big5 as Record<string, Record<string, number>>;
-      const traits = ["openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"]
-        .map((t) => `${t[0]!.toUpperCase()}:${b5[t]?.score ?? "?"}`)
-        .join(" ");
-      lines.push(`Big5: ${traits}`);
+      const b5 = ctx.big5;
+      const traits = [
+        `O:${b5.openness?.score ?? "?"}`,
+        `C:${b5.conscientiousness?.score ?? "?"}`,
+        `E:${b5.extraversion?.score ?? "?"}`,
+        `A:${b5.agreeableness?.score ?? "?"}`,
+        `N:${b5.neuroticism?.score ?? "?"}`,
+      ];
+      lines.push(`Big5: ${traits.join(" ")}`);
     }
     sections.push({ key: "personality", text: lines.join("\n"), priority: 7 });
   }

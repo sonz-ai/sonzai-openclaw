@@ -136,7 +136,7 @@ function formatPersonality(data: unknown): string | null {
   if (p.preferences) {
     const pref = p.preferences;
     lines.push(
-      `Style: pace=${pref.pace}, formality=${pref.formality}, humor=${pref.humor_style}, expression=${pref.emotional_expression}`,
+      `Style: pace=${pref.conversation_pace}, formality=${pref.formality}, humor=${pref.humor_style}, expression=${pref.emotional_expression}`,
     );
   }
 

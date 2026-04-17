@@ -4,6 +4,18 @@ set shell := ["bash", "-cu"]
 default:
     @just --list
 
+# Bump patch (x.y.Z+1) from package.json and deploy.
+patch:
+    just deploy $(just _next patch)
+
+# Bump minor (x.Y+1.0) from package.json and deploy.
+minor:
+    just deploy $(just _next minor)
+
+# Bump major (X+1.0.0) from package.json and deploy.
+major:
+    just deploy $(just _next major)
+
 # Full release: bump version, test, build, commit, publish to npm, tag, gh release.
 # Requires: bun, npm (logged in), gh (authenticated).
 # Usage: just deploy 1.2.3
@@ -88,3 +100,23 @@ _tag VERSION:
 
 _release VERSION:
     gh release create v{{VERSION}} --title "v{{VERSION}}" --generate-notes
+
+# Print current version from package.json.
+_current:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    npm pkg get version | tr -d '"'
+
+# Compute next version from current by bumping patch|minor|major.
+_next LEVEL:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    current=$(just _current)
+    IFS=. read -r MAJ MIN PAT <<< "$current"
+    case "{{LEVEL}}" in
+      patch) PAT=$((PAT+1)) ;;
+      minor) MIN=$((MIN+1)); PAT=0 ;;
+      major) MAJ=$((MAJ+1)); MIN=0; PAT=0 ;;
+      *) echo "error: LEVEL must be patch|minor|major (got {{LEVEL}})" >&2; exit 1 ;;
+    esac
+    echo "${MAJ}.${MIN}.${PAT}"

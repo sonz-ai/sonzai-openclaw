@@ -145,7 +145,8 @@ function formatPersonality(data: unknown): string | null {
   if (evo?.length) {
     lines.push("Recent shifts:");
     for (const d of evo.slice(0, 3)) {
-      lines.push(`- ${d.change} (${d.reason})`);
+      const sign = d.delta >= 0 ? "+" : "";
+      lines.push(`- ${d.trait_name}: ${sign}${d.delta.toFixed(2)}${d.reasoning ? ` (${d.reasoning})` : ""}`);
     }
   }
 

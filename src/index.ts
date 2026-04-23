@@ -4,7 +4,7 @@ export { parseSessionKey } from "./session-key.js";
 export { resolveConfig } from "./config.js";
 export { buildSystemPromptAddition, estimateTokens } from "./context-builder.js";
 export { SessionCache } from "./cache.js";
-export { setup } from "./setup.js";
+export { setup, healthCheck, oneShotInstall } from "./setup.js";
 
 export type { SonzaiPluginConfig, ResolvedConfig, DisableMap } from "./config.js";
 export type { ParsedSessionKey } from "./session-key.js";

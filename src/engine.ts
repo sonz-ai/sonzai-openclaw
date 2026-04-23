@@ -153,7 +153,12 @@ export class SonzaiContextEngine implements ContextEngine {
     }
 
     try {
-      await this.client.agents.consolidate(session.agentId);
+      // Backend requires `period` ("daily" | "weekly") — we pick "daily"
+      // because OpenClaw sessions are chat-length, not multi-day, and the
+      // daily pipeline covers the freshly-ingested turns from this session.
+      await this.client.agents.consolidate(session.agentId, {
+        period: "daily",
+      });
       return { ok: true, compacted: true };
     } catch (err) {
       console.warn("[@sonzai-labs/openclaw-context] compact failed:", err);

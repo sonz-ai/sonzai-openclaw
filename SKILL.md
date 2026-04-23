@@ -1,6 +1,6 @@
 ---
 name: sonzai-mind-layer
-version: 1.3.0
+version: 1.3.1
 description: |
   Install and configure the Sonzai Mind Layer OpenClaw plugin for
   persistent memory, personality evolution, mood tracking, and
@@ -114,6 +114,18 @@ Before changing anything, tell the user:
 
 Do not skip this notice if you are about to restart OpenClaw automatically.
 
+### Step 0b — Backend health check
+
+Confirm the Sonzai backend is reachable before doing anything else:
+
+```bash
+curl -sf https://api.sonz.ai/health && echo "OK"
+```
+
+If this fails, tell the user plainly: "api.sonz.ai is unreachable right now — I can still install the plugin, but memory won't work until the backend is reachable."
+
+(For self-hosted deployments: swap the URL. You can also run `npx @sonzai-labs/openclaw-context health` or `health https://your-host/...`.)
+
 ### Step 1 — Check / obtain API key
 
 If the user has not mentioned a key, ask:
@@ -125,27 +137,29 @@ Do not proceed without a key.
 
 ### Step 2 — Install plugin
 
-Run:
+**One-shot (recommended):**
 
 ```bash
-openclaw plugins install @sonzai-labs/openclaw-context
+npx --yes @sonzai-labs/openclaw-context install
 ```
 
-Then run interactive setup:
+This does everything in one command:
 
-```bash
-npx @sonzai-labs/openclaw-context setup
-```
+- probes backend `/health`
+- runs `openclaw plugins install @sonzai-labs/openclaw-context`
+- launches the interactive config wizard
+- prints the restart instruction
 
 When the wizard prompts for a config path, enter `~/.openclaw/openclaw.json` (OpenClaw's canonical location) rather than accepting the `./openclaw.json` default.
 
-The setup wizard:
+**Two-step alternative** (if the one-shot fails or you want control):
 
-- accepts an API key (or reads `SONZAI_API_KEY` from env)
-- asks whether to use an existing agent or auto-provision
-- writes `~/.openclaw/openclaw.json` with the plugin config
+```bash
+openclaw plugins install @sonzai-labs/openclaw-context
+npx @sonzai-labs/openclaw-context setup
+```
 
-For non-interactive / CI use, use the programmatic API:
+**Non-interactive / CI:**
 
 ```bash
 node -e 'import("@sonzai-labs/openclaw-context").then(m => m.setup({apiKey: process.env.SONZAI_API_KEY, agentName: "openclaw-agent"}))'
@@ -293,6 +307,27 @@ All settings in `~/.openclaw/openclaw.json` under `plugins.entries.sonzai`:
 | `contextTokenBudget` | — | `2000` | Max tokens for context injection |
 | `memoryMode` | `SONZAI_MEMORY_MODE` | `sync` | Memory recall timing — `sync` (default, per-turn completeness) or `async` (lower first-token latency, slow hits may spill to next turn). Enforced on every bootstrap. |
 | `disable.{mood,personality,relationships,memory,goals,interests,habits,knowledge}` | — | `false` | Skip specific context sections |
+
+---
+
+## REST API reference
+
+The plugin calls these Sonzai endpoints. Always up-to-date: run `just sync-spec` to re-pull the spec and regenerate the table below.
+
+<!-- api-ref:start -->
+_Generated from `spec/openapi.json` (API version **1.0.0**, synced 2026-04-23) — re-run `just sync-spec` to refresh._
+
+| Method | Path | What the plugin uses it for |
+|--------|------|------------------------------|
+| `GET` | `/agents/{agentId}` | Fetch agent metadata |
+| `GET` | `/agents/{agentId}/context` | Enriched context for assemble() — per turn |
+| `POST` | `/agents` | Provision / look up agent (idempotent) |
+| `POST` | `/agents/{agentId}/memory/consolidate` | Consolidation pipeline trigger from compact() |
+| `POST` | `/agents/{agentId}/process` | Fact extraction from afterTurn() |
+| `POST` | `/agents/{agentId}/sessions/end` | Session close — dispose() |
+| `POST` | `/agents/{agentId}/sessions/start` | Session open — bootstrap() |
+| `PUT` | `/agents/{agentId}/capabilities` | Enforce memoryMode on every bootstrap |
+<!-- api-ref:end -->
 
 ---
 

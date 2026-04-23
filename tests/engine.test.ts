@@ -248,7 +248,10 @@ describe("SonzaiContextEngine", () => {
       });
 
       expect(result).toEqual({ ok: true, compacted: true });
-      expect((client as any).agents.consolidate).toHaveBeenCalledWith("agent-123");
+      expect((client as any).agents.consolidate).toHaveBeenCalledWith(
+        "agent-123",
+        { period: "daily" },
+      );
     });
 
     it("returns failure for unknown session", async () => {

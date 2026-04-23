@@ -4,22 +4,38 @@ OpenClaw ContextEngine plugin for the [Sonzai Mind Layer](https://sonz.ai). Give
 
 ## Quick Start
 
-### Interactive Setup (Recommended)
+### One-shot install (recommended)
 
 ```bash
-# Install the plugin
-openclaw plugins install @sonzai-labs/openclaw-context
+npx --yes @sonzai-labs/openclaw-context install
+```
 
-# Run guided setup — validates your key, provisions agent, writes openclaw.json
+This probes backend health, runs `openclaw plugins install`, launches the interactive config wizard, and prints the restart instruction. One command end-to-end.
+
+### Interactive Setup
+
+```bash
+openclaw plugins install @sonzai-labs/openclaw-context
 npx @sonzai-labs/openclaw-context setup
 ```
 
 The setup wizard will:
 1. Ask for your Sonzai API key (or detect `SONZAI_API_KEY` from env)
 2. Ask if you have an existing agent ID, or create one for you
-3. Write your API key and plugin config to `openclaw.json`
+3. Ask whether memory recall should be `sync` (default) or `async`
+4. Write your API key and plugin config to `openclaw.json`
 
 That's it — restart OpenClaw and your agent has persistent memory. No environment variables needed.
+
+### Backend health check
+
+Before installing, verify the backend is reachable:
+
+```bash
+curl -sf https://api.sonz.ai/health && echo "OK"
+# or
+npx @sonzai-labs/openclaw-context health
+```
 
 ### Manual Setup
 
@@ -148,6 +164,17 @@ Before each LLM call, the plugin injects a `<sonzai-context>` block into the sys
 
 If any API call fails, it's silently skipped — the plugin never blocks OpenClaw.
 
+### Mid-session memory retrieval
+
+`assemble()` runs before every LLM turn and calls `getContext` with the current user message as the query — so memory search is **per-turn**, not a session-start snapshot.
+
+Two classes of memory are surfaced:
+
+- **Consolidated facts** (`loaded_facts`) — extracted from prior sessions and promoted by the consolidation pipeline. Always available.
+- **Recent turns** (`recent_turns`) — raw messages from the current session, pushed on every `process()` call, TTL 2h. Closes the latency gap for facts the user just stated this turn but hasn't been consolidated into a canonical fact yet.
+
+The Sonzai backend writes recent turns on each `afterTurn` → `process()` and surfaces them on the next `assemble` → `getContext` call. So a fact stated this turn is retrievable next turn even before the consolidation pipeline has run.
+
 ### User Identity
 
 The plugin automatically extracts user identity from OpenClaw session keys:
@@ -215,6 +242,25 @@ manual agent update needed:
   }
 }
 ```
+
+## REST API reference
+
+The plugin calls these endpoints on your behalf via the `@sonzai-labs/agents` SDK. Always up-to-date — run `just sync-spec` to re-pull the production spec and regenerate the table.
+
+<!-- api-ref:start -->
+_Generated from `spec/openapi.json` (API version **1.0.0**, synced 2026-04-23) — re-run `just sync-spec` to refresh._
+
+| Method | Path | What the plugin uses it for |
+|--------|------|------------------------------|
+| `GET` | `/agents/{agentId}` | Fetch agent metadata |
+| `GET` | `/agents/{agentId}/context` | Enriched context for assemble() — per turn |
+| `POST` | `/agents` | Provision / look up agent (idempotent) |
+| `POST` | `/agents/{agentId}/memory/consolidate` | Consolidation pipeline trigger from compact() |
+| `POST` | `/agents/{agentId}/process` | Fact extraction from afterTurn() |
+| `POST` | `/agents/{agentId}/sessions/end` | Session close — dispose() |
+| `POST` | `/agents/{agentId}/sessions/start` | Session open — bootstrap() |
+| `PUT` | `/agents/{agentId}/capabilities` | Enforce memoryMode on every bootstrap |
+<!-- api-ref:end -->
 
 ## Programmatic Engine Usage
 

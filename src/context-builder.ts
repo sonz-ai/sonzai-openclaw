@@ -347,6 +347,27 @@ export function buildSystemPromptFromContext(
       }
       sections.push({ key: "memories", text: lines.join("\n"), priority: 6 });
     }
+
+    // Recent turns from the current session — facts said this turn become
+    // surface-able next turn, before the consolidation pipeline finishes
+    // extracting them into structured facts. Rendered separately so the
+    // model knows these are pre-extraction raw context, not canonical.
+    const recentTurns = (ctx as { recent_turns?: Array<{ role?: string; content?: string; timestamp?: string }> })
+      .recent_turns;
+    if (recentTurns?.length) {
+      const lines = ["## Recent Context (this session, not yet consolidated)"];
+      // Cap to last ~6 turns to keep token budget tight; more than that
+      // belongs in the conversation history the host already has.
+      for (const t of recentTurns.slice(-6)) {
+        const role = t.role || "user";
+        const content = (t.content || "").replace(/\s+/g, " ").trim();
+        if (!content) continue;
+        lines.push(`- ${role}: ${content}`);
+      }
+      if (lines.length > 1) {
+        sections.push({ key: "recent_turns", text: lines.join("\n"), priority: 6 });
+      }
+    }
   }
 
   if (!disable.mood && ctx.current_mood) {

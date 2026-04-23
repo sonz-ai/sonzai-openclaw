@@ -252,17 +252,103 @@ function mergeOpenClawConfig(
 }
 
 // ---------------------------------------------------------------------------
+// Health check
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe the Sonzai backend `/health` endpoint. Returns true on 2xx within
+ * 5s. Used by the installer and exposed for scripts.
+ */
+export async function healthCheck(
+  baseUrl: string = "https://api.sonz.ai",
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/health`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One-shot install — `npx @sonzai-labs/openclaw-context install`
+// ---------------------------------------------------------------------------
+
+/**
+ * Chains the two commands users would otherwise run manually:
+ *   1. `openclaw plugins install @sonzai-labs/openclaw-context`
+ *   2. `npx @sonzai-labs/openclaw-context setup` (interactive)
+ *
+ * Matches the ergonomic of EverMind's `npx everos-install` one-shot.
+ */
+export async function oneShotInstall(): Promise<void> {
+  const { spawnSync } = await import("node:child_process");
+
+  console.log("\n🦞 Sonzai Mind Layer — OpenClaw One-Shot Install\n");
+
+  // Step 0: health check
+  console.log("Checking Sonzai backend reachability...");
+  const base = process.env.SONZAI_BASE_URL || "https://api.sonz.ai";
+  const healthy = await healthCheck(base);
+  if (!healthy) {
+    console.log(
+      `⚠️  Could not reach ${base}/health. Continuing anyway — you'll need to fix this before the plugin can work.`,
+    );
+  } else {
+    console.log(`✓ Backend reachable at ${base}`);
+  }
+
+  // Step 1: openclaw plugins install — best-effort, warn on failure
+  console.log("\nInstalling plugin via OpenClaw CLI...");
+  const installResult = spawnSync(
+    "openclaw",
+    ["plugins", "install", "@sonzai-labs/openclaw-context"],
+    { stdio: "inherit" },
+  );
+  if (installResult.status !== 0) {
+    console.log(
+      "⚠️  `openclaw plugins install` did not exit cleanly. You may need to install the plugin manually (or `openclaw` CLI is not on PATH).",
+    );
+  } else {
+    console.log("✓ Plugin installed via OpenClaw CLI");
+  }
+
+  // Step 2: interactive setup (reuses existing wizard)
+  console.log("\nRunning configuration wizard...");
+  await interactiveSetup();
+
+  // Step 3: restart notice
+  console.log("\n--- Next step ---\n");
+  console.log("Restart the OpenClaw gateway:");
+  console.log("    openclaw gateway restart\n");
+  console.log(
+    'Then verify: send "Remember: I like espresso." in a turn, start a new turn, ask "What coffee do I like?"\n',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-/** Run when invoked as `npx @sonzai-labs/openclaw-context setup` */
+/** Run when invoked as `npx @sonzai-labs/openclaw-context {command}` */
 export async function main(): Promise<void> {
   const command = process.argv[2];
 
-  if (command === "setup") {
+  if (command === "install") {
+    await oneShotInstall();
+  } else if (command === "setup") {
     await interactiveSetup();
+  } else if (command === "health") {
+    const base = process.argv[3] || process.env.SONZAI_BASE_URL || "https://api.sonz.ai";
+    const ok = await healthCheck(base);
+    console.log(`${base} — ${ok ? "OK" : "UNREACHABLE"}`);
+    if (!ok) process.exit(1);
   } else {
-    console.log("Usage: npx @sonzai-labs/openclaw-context setup");
-    console.log("\nRun interactive setup to configure the Sonzai OpenClaw plugin.");
+    console.log("Usage:");
+    console.log("  npx @sonzai-labs/openclaw-context install    # one-shot: install + setup + next-steps");
+    console.log("  npx @sonzai-labs/openclaw-context setup      # interactive config wizard only");
+    console.log("  npx @sonzai-labs/openclaw-context health [url]  # probe backend /health");
   }
 }

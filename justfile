@@ -4,6 +4,18 @@ set shell := ["bash", "-cu"]
 default:
     @just --list
 
+# Pull the latest OpenAPI spec from production and regenerate the SKILL.md API reference.
+# The plugin doesn't consume the spec directly — the SDK does — but we keep a
+# snapshot so SKILL.md and README tables stay in sync with backend reality.
+sync-spec:
+    @echo "Fetching OpenAPI spec from https://api.sonz.ai/docs/openapi.json ..."
+    @mkdir -p spec
+    @curl -sfL https://api.sonz.ai/docs/openapi.json -o spec/openapi.json
+    @echo "Updating SKILL.md API reference table from spec..."
+    @bun run scripts/render-api-reference.ts
+    @echo "Done. Diff:"
+    @git diff --stat spec/openapi.json SKILL.md || true
+
 # Bump patch (x.y.Z+1) from package.json and deploy.
 patch:
     just deploy $(just _next patch)

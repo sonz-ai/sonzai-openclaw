@@ -9,6 +9,7 @@ import { buildSystemPromptFromContext, estimateTokens } from "./context-builder.
 import type { ResolvedConfig } from "./config.js";
 import { parseSessionKey } from "./session-key.js";
 import { isSessionResetPrompt } from "./session-reset.js";
+import { stripInjectedContext } from "./strip-context.js";
 import type {
   AfterTurnArgs,
   AssembleArgs,
@@ -180,7 +181,7 @@ export class SonzaiContextEngine implements ContextEngine {
         sessionId: session.sonzaiSessionId,
         messages: newMessages.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
-          content: m.content,
+          content: m.role === "user" ? stripInjectedContext(m.content) : m.content,
         })),
         provider: this.config.extractionProvider,
         model: this.config.extractionModel,

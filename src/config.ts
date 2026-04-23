@@ -45,9 +45,18 @@ export interface SonzaiPluginConfig {
   contextTokenBudget?: number;
   /** Selectively disable context sources. */
   disable?: DisableMap;
-  /** LLM provider for side-effect extraction (e.g. "gemini", "openai"). Uses platform default if omitted. */
+  /**
+   * LLM provider for side-effect fact extraction. Optional — the Sonzai
+   * backend defaults to "gemini" if omitted. Set to "openai", "anthropic",
+   * etc. to route extraction through a different provider.
+   */
   extractionProvider?: string;
-  /** LLM model for side-effect extraction (e.g. "gemini-2.5-flash"). Uses platform default if omitted. */
+  /**
+   * LLM model for side-effect fact extraction. Optional — the Sonzai backend
+   * defaults to `gemini-3.1-flash-lite-preview` if omitted (the extraction
+   * floor). Override with a heavier model like `gemini-3.1-pro-preview` to
+   * trade latency/cost for extraction quality.
+   */
   extractionModel?: string;
   /**
    * Supplementary memory recall timing on the Sonzai backend.

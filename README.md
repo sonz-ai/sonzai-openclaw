@@ -145,7 +145,7 @@ The plugin replaces OpenClaw's default Markdown-file memory with Sonzai's Mind L
 |---------------|-------------|
 | **bootstrap** | Starts a Sonzai session; provisions agent if needed |
 | **ingest** | No-op (processing deferred to afterTurn) |
-| **assemble** | Fetches memory, mood, personality, relationships, goals, interests, and habits in parallel; injects as `systemPromptAddition` |
+| **assemble** | Single `getContext` call fetches memory, mood, personality, relationships, goals, interests, habits, and recent_turns (server-side parallelized); injects as `systemPromptAddition` |
 | **compact** | Triggers Sonzai's consolidation pipeline (replaces OpenClaw's summarization) |
 | **afterTurn** | Sends conversation to Sonzai for fact extraction |
 | **dispose** | Ends all active sessions cleanly |
@@ -222,6 +222,9 @@ All settings go in `openclaw.json` under `plugins.entries.sonzai`. Environment v
 | `disable.goals` | — | `false` | Skip goals context |
 | `disable.interests` | — | `false` | Skip interests context |
 | `disable.habits` | — | `false` | Skip habits context |
+| `disable.knowledge` | — | `false` | Skip knowledge-base context |
+| `extractionProvider` | `SONZAI_EXTRACTION_PROVIDER` | `gemini` | LLM provider used for fact extraction. Optional. Override to route extraction through `openai`, `anthropic`, etc. |
+| `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite-preview` | LLM model used for fact extraction. Optional — this is the default floor. Override with a heavier model like `gemini-3.1-pro-preview` to trade latency/cost for extraction quality. |
 
 ### Switching memory mode
 

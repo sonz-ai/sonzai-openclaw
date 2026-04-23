@@ -27,6 +27,13 @@ export interface SetupOptions {
   configPath?: string;
   /** If true, writes to openclaw.json. If false, returns config object only. */
   writeConfig?: boolean;
+  /**
+   * Supplementary memory recall timing. Defaults to "sync" — the plugin
+   * blocks context build until recall completes so facts land in the
+   * current turn. Use "async" only if first-token latency is a measured
+   * concern and you accept that slow hits spill to the next turn.
+   */
+  memoryMode?: "sync" | "async";
 }
 
 export interface SetupResult {
@@ -46,6 +53,7 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
   const agentName = options.agentName || "openclaw-agent";
   const writeConfig = options.writeConfig ?? true;
   const configPath = options.configPath || "./openclaw.json";
+  const memoryMode = options.memoryMode ?? "sync";
 
   // 1. Validate API key by provisioning / finding the agent
   const client = new Sonzai({ apiKey: options.apiKey, baseUrl });
@@ -56,13 +64,28 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
     const agent = await client.agents.get(options.agentId);
     agentId = agent.agent_id;
   } else {
-    // Idempotent create — backend derives deterministic UUID from tenant+name
-    const agent = await client.agents.create({ name: agentName });
+    // Idempotent create — backend derives deterministic UUID from tenant+name.
+    // Seed the configured memoryMode so fresh agents inherit it.
+    const agent = await client.agents.create({
+      name: agentName,
+      toolCapabilities: {
+        web_search: false,
+        remember_name: false,
+        image_generation: false,
+        inventory: false,
+        memory_mode: memoryMode,
+      },
+    });
     agentId = agent.agent_id;
   }
 
+  // 1b. Enforce memoryMode on the resolved agent (handles both pre-existing
+  // and freshly-created agents — idempotent create doesn't overwrite
+  // capabilities on existing agents).
+  await client.agents.updateCapabilities(agentId, { memoryMode });
+
   // 2. Build the openclaw.json plugin config
-  const pluginConfig = buildOpenClawConfig(options.apiKey, agentId);
+  const pluginConfig = buildOpenClawConfig(options.apiKey, agentId, memoryMode);
 
   // 3. Optionally write to openclaw.json
   let written = false;
@@ -127,24 +150,32 @@ export async function interactiveSetup(): Promise<void> {
       if (customName.trim()) agentName = customName.trim();
     }
 
-    // Step 3: Validate
+    // Step 3: Memory mode
+    const memoryModeAnswer = await ask(
+      "Memory recall mode — [s]ync (recommended, default) or [a]sync (lower latency, may spill facts): ",
+    );
+    const memoryMode: "sync" | "async" =
+      memoryModeAnswer.trim().toLowerCase().startsWith("a") ? "async" : "sync";
+
+    // Step 4: Validate
     console.log("\nValidating API key and provisioning agent...");
     const result = await setup({
       apiKey: apiKey.trim(),
       agentId: agentId?.trim() || undefined,
       agentName,
+      memoryMode,
       writeConfig: false,
     });
-    console.log(`Agent ready: ${result.agentId}`);
+    console.log(`Agent ready: ${result.agentId} (memoryMode=${memoryMode})`);
 
-    // Step 4: Write config
+    // Step 5: Write config
     const configPath = await ask("Path to openclaw.json [./openclaw.json]: ");
     const resolvedPath = configPath.trim() || "./openclaw.json";
 
     mergeOpenClawConfig(resolvedPath, result.config);
     console.log(`\nConfig written to ${path.resolve(resolvedPath)}`);
 
-    // Step 5: Done
+    // Step 6: Done
     console.log("\n--- Setup Complete ---\n");
     console.log(
       "Your API key and agent ID are saved in openclaw.json — no environment variables needed.\n",
@@ -161,18 +192,24 @@ export async function interactiveSetup(): Promise<void> {
 function buildOpenClawConfig(
   apiKey: string,
   agentId: string,
+  memoryMode: "sync" | "async",
 ): Record<string, unknown> {
+  const entry: Record<string, unknown> = {
+    enabled: true,
+    apiKey,
+    agentId,
+  };
+  // Only write memoryMode when non-default, to keep openclaw.json minimal.
+  if (memoryMode !== "sync") {
+    entry.memoryMode = memoryMode;
+  }
   return {
     plugins: {
       slots: {
         contextEngine: "sonzai",
       },
       entries: {
-        sonzai: {
-          enabled: true,
-          apiKey,
-          agentId,
-        },
+        sonzai: entry,
       },
     },
   };

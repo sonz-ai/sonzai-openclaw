@@ -52,6 +52,8 @@ export class SonzaiContextEngine implements ContextEngine {
       const parsed = parseSessionKey(sessionId, this.config.defaultUserId);
       const agentId = await this.resolveAgentId(parsed.agentId);
 
+      await this.enforceMemoryMode(agentId);
+
       // Start a Sonzai session
       await this.client.agents.sessions.start(agentId, {
         userId: parsed.userId,
@@ -249,11 +251,45 @@ export class SonzaiContextEngine implements ContextEngine {
     const cached = this.agentCache.get(name);
     if (cached) return cached;
 
-    // Auto-provision — idempotent (returns 200 if exists, 201 if new)
-    const agent = await this.client.agents.create({ name });
+    // Auto-provision — idempotent (returns 200 if exists, 201 if new).
+    // Pass memoryMode as part of toolCapabilities so freshly-created
+    // agents inherit it. Existing agents are enforced separately in
+    // bootstrap via updateCapabilities (since idempotent create does not
+    // overwrite capabilities on existing agents).
+    const agent = await this.client.agents.create({
+      name,
+      toolCapabilities: {
+        web_search: false,
+        remember_name: false,
+        image_generation: false,
+        inventory: false,
+        memory_mode: this.config.memoryMode,
+      },
+    });
 
     this.agentCache.set(name, agent.agent_id);
     return agent.agent_id;
+  }
+
+  /**
+   * Enforce the configured `memoryMode` on the resolved agent. Called
+   * from bootstrap after resolveAgentId so that config changes
+   * (sync ↔ async) take effect on the next session start without
+   * requiring manual agent edits.
+   *
+   * Best-effort: failures are logged but do not block bootstrap.
+   */
+  private async enforceMemoryMode(agentId: string): Promise<void> {
+    try {
+      await this.client.agents.updateCapabilities(agentId, {
+        memoryMode: this.config.memoryMode,
+      });
+    } catch (err) {
+      console.warn(
+        "[@sonzai-labs/openclaw-context] enforceMemoryMode failed:",
+        err,
+      );
+    }
   }
 
 }

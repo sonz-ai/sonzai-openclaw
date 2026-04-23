@@ -1,6 +1,6 @@
 ---
 name: sonzai-mind-layer
-version: 1.2.0
+version: 1.3.0
 description: |
   Install and configure the Sonzai Mind Layer OpenClaw plugin for
   persistent memory, personality evolution, mood tracking, and
@@ -291,6 +291,7 @@ All settings in `~/.openclaw/openclaw.json` under `plugins.entries.sonzai`:
 | `baseUrl` | `SONZAI_BASE_URL` | `https://api.sonz.ai` | API base URL |
 | `agentName` | `SONZAI_AGENT_NAME` | `openclaw-agent` | Name for auto-provisioning |
 | `contextTokenBudget` | — | `2000` | Max tokens for context injection |
+| `memoryMode` | `SONZAI_MEMORY_MODE` | `sync` | Memory recall timing — `sync` (default, per-turn completeness) or `async` (lower first-token latency, slow hits may spill to next turn). Enforced on every bootstrap. |
 | `disable.{mood,personality,relationships,memory,goals,interests,habits,knowledge}` | — | `false` | Skip specific context sections |
 
 ---

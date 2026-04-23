@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SonzaiContextEngine } from "../src/engine.js";
 import type { ResolvedConfig } from "../src/config.js";
+import { BARE_SESSION_RESET_PROMPT } from "../src/session-reset.js";
 
 // ---------------------------------------------------------------------------
 // Mock Sonzai client
@@ -264,5 +265,41 @@ describe("SonzaiContextEngine", () => {
 
       expect((client as any).agents.sessions.end).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe("SonzaiContextEngine.assemble", () => {
+  it("skips context fetch on the session-reset boilerplate prompt", async () => {
+    const getContext = vi.fn();
+    const mockClient = {
+      agents: {
+        sessions: { start: vi.fn().mockResolvedValue({}) },
+        getContext,
+      },
+    } as unknown as import("@sonzai-labs/agents").Sonzai;
+
+    const engine = new SonzaiContextEngine(mockClient, {
+      apiKey: "sk-test",
+      agentId: "agent-1",
+      baseUrl: "https://api.sonz.ai",
+      agentName: "test",
+      defaultUserId: "owner",
+      contextTokenBudget: 2000,
+      disable: {},
+      extractionProvider: undefined,
+      extractionModel: undefined,
+    });
+
+    await engine.bootstrap({ sessionId: "agent:agent-1:main" });
+
+    const result = await engine.assemble({
+      sessionId: "agent:agent-1:main",
+      messages: [{ role: "user", content: BARE_SESSION_RESET_PROMPT }],
+      tokenBudget: 4000,
+    });
+
+    expect(getContext).not.toHaveBeenCalled();
+    expect(result.estimatedTokens).toBe(0);
+    expect(result.systemPromptAddition).toBeUndefined();
   });
 });

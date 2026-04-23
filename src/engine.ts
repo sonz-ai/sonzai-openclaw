@@ -8,6 +8,7 @@ import { SessionCache } from "./cache.js";
 import { buildSystemPromptFromContext, estimateTokens } from "./context-builder.js";
 import type { ResolvedConfig } from "./config.js";
 import { parseSessionKey } from "./session-key.js";
+import { isSessionResetPrompt } from "./session-reset.js";
 import type {
   AfterTurnArgs,
   AssembleArgs,
@@ -99,6 +100,9 @@ export class SonzaiContextEngine implements ContextEngine {
     try {
       const { agentId, userId } = session;
       const lastUserMsg = findLastUserMessage(messages);
+      if (isSessionResetPrompt(lastUserMsg)) {
+        return { messages, estimatedTokens: 0 };
+      }
       const budget = Math.min(tokenBudget, this.config.contextTokenBudget);
 
       // Resolve userId for group chats: prefer origin.from if available

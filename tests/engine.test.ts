@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SonzaiContextEngine } from "../src/engine.js";
 import type { ResolvedConfig } from "../src/config.js";
 import { BARE_SESSION_RESET_PROMPT } from "../src/session-reset.js";
+import { CONTEXT_BOUNDARY } from "../src/context-builder.js";
 
 // ---------------------------------------------------------------------------
 // Mock Sonzai client
@@ -301,5 +302,47 @@ describe("SonzaiContextEngine.assemble", () => {
     expect(getContext).not.toHaveBeenCalled();
     expect(result.estimatedTokens).toBe(0);
     expect(result.systemPromptAddition).toBeUndefined();
+  });
+});
+
+describe("SonzaiContextEngine.afterTurn pollution guard", () => {
+  it("strips our own injected context from user messages before fact extraction", async () => {
+    const process = vi.fn().mockResolvedValue({});
+    const mockClient = {
+      agents: {
+        sessions: { start: vi.fn().mockResolvedValue({}) },
+        process,
+      },
+    } as unknown as import("@sonzai-labs/agents").Sonzai;
+
+    const engine = new SonzaiContextEngine(mockClient, {
+      apiKey: "sk-test",
+      agentId: "agent-1",
+      baseUrl: "https://api.sonz.ai",
+      agentName: "test",
+      defaultUserId: "owner",
+      contextTokenBudget: 2000,
+      disable: {},
+      extractionProvider: undefined,
+      extractionModel: undefined,
+    });
+
+    await engine.bootstrap({ sessionId: "agent:agent-1:main" });
+
+    const pollutedUserMsg =
+      `<sonzai-context>\n## Memories\n- user likes tea\n</sonzai-context>\n${CONTEXT_BOUNDARY}\nWhat do I like?`;
+
+    await engine.assemble({
+      sessionId: "agent:agent-1:main",
+      messages: [{ role: "user", content: pollutedUserMsg }],
+      tokenBudget: 4000,
+    }).catch(() => {});
+
+    await engine.afterTurn({ sessionId: "agent:agent-1:main" });
+
+    expect(process).toHaveBeenCalledOnce();
+    const [, payload] = process.mock.calls[0]!;
+    expect(payload.messages[0].content).toBe("What do I like?");
+    expect(payload.messages[0].content).not.toContain("sonzai-context");
   });
 });

@@ -14,6 +14,17 @@ import type {
   RelationshipResponse,
 } from "@sonzai-labs/agents";
 
+/**
+ * Zero-width sentinel appended to every injected context block. If an
+ * OpenClaw host splices `systemPromptAddition` into the user message
+ * content (instead of keeping it in a system role), the next turn's
+ * afterTurn can slice everything up to this sentinel before sending
+ * messages to fact extraction — preventing memory from being polluted
+ * by our own injected context.
+ */
+export const CONTEXT_BOUNDARY =
+  "user​original​query​:​​​​";
+
 // ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
@@ -95,7 +106,7 @@ export function buildSystemPromptAddition(
     result = result.slice(0, maxChars) + "\n[...truncated]\n</sonzai-context>";
   }
 
-  return result;
+  return result + "\n" + CONTEXT_BOUNDARY;
 }
 
 /**
@@ -398,5 +409,5 @@ export function buildSystemPromptFromContext(
     result = result.slice(0, maxChars) + "\n[...truncated]\n</sonzai-context>";
   }
 
-  return result;
+  return result + "\n" + CONTEXT_BOUNDARY;
 }

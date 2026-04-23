@@ -42,6 +42,7 @@ function createMockClient() {
       }),
       consolidate: vi.fn().mockResolvedValue({}),
       process: vi.fn().mockResolvedValue({ success: true, memories_created: 2, facts_extracted: 3, side_effects: { mood_updated: true, personality_updated: false, habits_observed: 0, interests_detected: 1 } }),
+      updateCapabilities: vi.fn().mockResolvedValue({}),
     },
   } as unknown;
 }
@@ -57,6 +58,7 @@ function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     disable: {},
     extractionProvider: undefined,
     extractionModel: undefined,
+    memoryMode: "sync",
     ...overrides,
   };
 }
@@ -108,8 +110,16 @@ describe("SonzaiContextEngine", () => {
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
 
       // Uses config.agentName (stable across restarts/pods, not runtime-derived)
+      // and seeds the configured memoryMode at creation time.
       expect((client as any).agents.create).toHaveBeenCalledWith({
         name: "test-agent",
+        toolCapabilities: {
+          web_search: false,
+          remember_name: false,
+          image_generation: false,
+          inventory: false,
+          memory_mode: "sync",
+        },
       });
     });
 
@@ -119,6 +129,42 @@ describe("SonzaiContextEngine", () => {
       await expect(
         engine.bootstrap({ sessionId: "agent:abc:mainKey" }),
       ).resolves.not.toThrow();
+    });
+
+    it("enforces configured memoryMode via updateCapabilities", async () => {
+      await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
+
+      expect((client as any).agents.updateCapabilities).toHaveBeenCalledWith(
+        "agent-123",
+        { memoryMode: "sync" },
+      );
+    });
+
+    it("enforces async memoryMode when configured", async () => {
+      engine = new SonzaiContextEngine(
+        client as any,
+        createConfig({ memoryMode: "async" }),
+      );
+
+      await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
+
+      expect((client as any).agents.updateCapabilities).toHaveBeenCalledWith(
+        "agent-123",
+        { memoryMode: "async" },
+      );
+    });
+
+    it("does not fail bootstrap if updateCapabilities throws", async () => {
+      (client as any).agents.updateCapabilities.mockRejectedValue(
+        new Error("capability endpoint down"),
+      );
+
+      await expect(
+        engine.bootstrap({ sessionId: "agent:abc:mainKey" }),
+      ).resolves.not.toThrow();
+
+      // Session still starts despite the enforcement failure
+      expect((client as any).agents.sessions.start).toHaveBeenCalled();
     });
   });
 
@@ -276,6 +322,7 @@ describe("SonzaiContextEngine.assemble", () => {
       agents: {
         sessions: { start: vi.fn().mockResolvedValue({}) },
         getContext,
+        updateCapabilities: vi.fn().mockResolvedValue({}),
       },
     } as unknown as import("@sonzai-labs/agents").Sonzai;
 
@@ -289,6 +336,7 @@ describe("SonzaiContextEngine.assemble", () => {
       disable: {},
       extractionProvider: undefined,
       extractionModel: undefined,
+      memoryMode: "sync",
     });
 
     await engine.bootstrap({ sessionId: "agent:agent-1:main" });
@@ -312,6 +360,7 @@ describe("SonzaiContextEngine.afterTurn pollution guard", () => {
       agents: {
         sessions: { start: vi.fn().mockResolvedValue({}) },
         process,
+        updateCapabilities: vi.fn().mockResolvedValue({}),
       },
     } as unknown as import("@sonzai-labs/agents").Sonzai;
 
@@ -325,6 +374,7 @@ describe("SonzaiContextEngine.afterTurn pollution guard", () => {
       disable: {},
       extractionProvider: undefined,
       extractionModel: undefined,
+      memoryMode: "sync",
     });
 
     await engine.bootstrap({ sessionId: "agent:agent-1:main" });

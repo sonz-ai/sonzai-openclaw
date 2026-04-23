@@ -20,6 +20,8 @@ export interface DisableMap {
   knowledge?: boolean;
 }
 
+export type MemoryMode = "sync" | "async";
+
 export interface SonzaiPluginConfig {
   /** Sonzai API key (sk-...). Required. */
   apiKey: string;
@@ -47,6 +49,20 @@ export interface SonzaiPluginConfig {
   extractionProvider?: string;
   /** LLM model for side-effect extraction (e.g. "gemini-2.5-flash"). Uses platform default if omitted. */
   extractionModel?: string;
+  /**
+   * Supplementary memory recall timing on the Sonzai backend.
+   *
+   * - `"sync"` (default) blocks context build until memory recall returns, so
+   *   every fact lands in the current turn. Recommended for OpenClaw since
+   *   per-turn completeness matters more than first-token latency.
+   * - `"async"` races recall against a deadline — slow hits spill to the next
+   *   turn. Choose this only if you've measured first-token latency as a
+   *   blocker.
+   *
+   * The plugin enforces this on every bootstrap, so changes to the config
+   * take effect on the next session start without manual agent updates.
+   */
+  memoryMode?: MemoryMode;
 }
 
 export interface ResolvedConfig {
@@ -59,6 +75,7 @@ export interface ResolvedConfig {
   disable: DisableMap;
   extractionProvider: string | undefined;
   extractionModel: string | undefined;
+  memoryMode: MemoryMode;
 }
 
 const DEFAULTS = {
@@ -66,6 +83,7 @@ const DEFAULTS = {
   agentName: "openclaw-agent",
   defaultUserId: "owner",
   contextTokenBudget: 2000,
+  memoryMode: "sync" as MemoryMode,
 } as const;
 
 /**
@@ -121,7 +139,22 @@ export function resolveConfig(
     disable: raw?.disable ?? file.disable ?? {},
     extractionProvider: raw?.extractionProvider || file.extractionProvider || env("SONZAI_EXTRACTION_PROVIDER") || undefined,
     extractionModel: raw?.extractionModel || file.extractionModel || env("SONZAI_EXTRACTION_MODEL") || undefined,
+    memoryMode: resolveMemoryMode(raw?.memoryMode, file.memoryMode, env("SONZAI_MEMORY_MODE")),
   };
+}
+
+function resolveMemoryMode(
+  ...candidates: (string | undefined)[]
+): MemoryMode {
+  for (const c of candidates) {
+    if (c === "sync" || c === "async") return c;
+    if (c !== undefined && c !== "") {
+      throw new Error(
+        `[@sonzai-labs/openclaw-context] Invalid memoryMode: ${JSON.stringify(c)}. Must be "sync" or "async".`,
+      );
+    }
+  }
+  return DEFAULTS.memoryMode;
 }
 
 function env(key: string): string | undefined {

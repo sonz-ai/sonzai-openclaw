@@ -10,6 +10,7 @@ describe("resolveConfig", () => {
     delete process.env.SONZAI_AGENT_ID;
     delete process.env.SONZAI_BASE_URL;
     delete process.env.SONZAI_AGENT_NAME;
+    delete process.env.SONZAI_MEMORY_MODE;
   });
 
   afterEach(() => {
@@ -51,6 +52,7 @@ describe("resolveConfig", () => {
     expect(config.contextTokenBudget).toBe(2000);
     expect(config.disable).toEqual({});
     expect(config.agentId).toBeUndefined();
+    expect(config.memoryMode).toBe("sync");
   });
 
   it("respects provided overrides", () => {
@@ -75,5 +77,47 @@ describe("resolveConfig", () => {
     process.env.SONZAI_AGENT_ID = "env-agent-id";
     const config = resolveConfig({ apiKey: "sk-test" });
     expect(config.agentId).toBe("env-agent-id");
+  });
+
+  describe("memoryMode", () => {
+    it("defaults to sync", () => {
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.memoryMode).toBe("sync");
+    });
+
+    it("accepts sync from config", () => {
+      const config = resolveConfig({ apiKey: "sk-test", memoryMode: "sync" });
+      expect(config.memoryMode).toBe("sync");
+    });
+
+    it("accepts async from config", () => {
+      const config = resolveConfig({ apiKey: "sk-test", memoryMode: "async" });
+      expect(config.memoryMode).toBe("async");
+    });
+
+    it("reads SONZAI_MEMORY_MODE env var", () => {
+      process.env.SONZAI_MEMORY_MODE = "async";
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.memoryMode).toBe("async");
+    });
+
+    it("config memoryMode takes precedence over env var", () => {
+      process.env.SONZAI_MEMORY_MODE = "async";
+      const config = resolveConfig({ apiKey: "sk-test", memoryMode: "sync" });
+      expect(config.memoryMode).toBe("sync");
+    });
+
+    it("throws on invalid value from config", () => {
+      expect(() =>
+        resolveConfig({ apiKey: "sk-test", memoryMode: "bogus" as "sync" }),
+      ).toThrow("Invalid memoryMode");
+    });
+
+    it("throws on invalid value from env var", () => {
+      process.env.SONZAI_MEMORY_MODE = "bogus";
+      expect(() => resolveConfig({ apiKey: "sk-test" })).toThrow(
+        "Invalid memoryMode",
+      );
+    });
   });
 });

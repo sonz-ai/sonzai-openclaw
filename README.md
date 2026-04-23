@@ -187,6 +187,7 @@ All settings go in `openclaw.json` under `plugins.entries.sonzai`. Environment v
 | `agentName` | `SONZAI_AGENT_NAME` | `openclaw-agent` | Name for auto-provisioned agents |
 | `defaultUserId` | — | `owner` | Default userId for CLI (1:1) sessions |
 | `contextTokenBudget` | — | `2000` | Max tokens for context injection |
+| `memoryMode` | `SONZAI_MEMORY_MODE` | `sync` | Memory recall timing. `sync` blocks context build until recall returns (per-turn completeness); `async` races a deadline (lower first-token latency, slow hits spill to next turn). |
 | `disable.mood` | — | `false` | Skip mood context |
 | `disable.personality` | — | `false` | Skip personality context |
 | `disable.relationships` | — | `false` | Skip relationship context |
@@ -194,6 +195,26 @@ All settings go in `openclaw.json` under `plugins.entries.sonzai`. Environment v
 | `disable.goals` | — | `false` | Skip goals context |
 | `disable.interests` | — | `false` | Skip interests context |
 | `disable.habits` | — | `false` | Skip habits context |
+
+### Switching memory mode
+
+The plugin enforces the configured `memoryMode` on every bootstrap, so changing
+`plugins.entries.sonzai.memoryMode` in `openclaw.json` (or setting
+`SONZAI_MEMORY_MODE=async`) takes effect on the next session start — no
+manual agent update needed:
+
+```json5
+{
+  "plugins": {
+    "entries": {
+      "sonzai": {
+        "apiKey": "sk-...",
+        "memoryMode": "async"  // default is "sync"
+      }
+    }
+  }
+}
+```
 
 ## Programmatic Engine Usage
 

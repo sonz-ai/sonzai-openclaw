@@ -1,6 +1,6 @@
 ---
 name: sonzai-mind-layer
-version: 1.3.1
+version: 1.3.2
 description: |
   Install and configure the Sonzai Mind Layer OpenClaw plugin for
   persistent memory, personality evolution, mood tracking, and

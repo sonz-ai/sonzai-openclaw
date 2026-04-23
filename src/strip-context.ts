@@ -6,8 +6,8 @@
 import { CONTEXT_BOUNDARY } from "./context-builder.js";
 
 export function stripInjectedContext(content: string): string {
-  if (!content) return content;
-  const cut = content.lastIndexOf(CONTEXT_BOUNDARY);
-  if (cut < 0) return content;
-  return content.slice(cut + CONTEXT_BOUNDARY.length).replace(/^\s+/, "");
+	if (!content) return content;
+	const cut = content.lastIndexOf(CONTEXT_BOUNDARY);
+	if (cut < 0) return content;
+	return content.slice(cut + CONTEXT_BOUNDARY.length).replace(/^\s+/, "");
 }

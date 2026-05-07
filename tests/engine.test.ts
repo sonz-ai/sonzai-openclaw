@@ -8,43 +8,63 @@ import { CONTEXT_BOUNDARY } from "../src/context-builder.js";
 // Mock Sonzai client
 // ---------------------------------------------------------------------------
 
-function createMockClient() {
+/**
+ * Build a fake Session handle that mirrors the public surface the engine
+ * uses: context() / turn() / end(). Each method is a fresh vi.fn() so
+ * tests can assert against them directly.
+ */
+function createMockSession() {
   return {
+    success: true,
+    context: vi.fn().mockResolvedValue({
+      personality_prompt: "You are a helpful agent",
+      speech_patterns: ["uses metaphors"],
+      true_interests: ["coffee", "hiking"],
+      primary_traits: ["helpful", "curious"],
+      big5: {
+        openness: { score: 70 },
+        conscientiousness: { score: 60 },
+        extraversion: { score: 50 },
+        agreeableness: { score: 80 },
+        neuroticism: { score: 30 },
+      },
+      preferences: { pace: "moderate", formality: "casual", humor_style: "warm" },
+      current_mood: { valence: 7, arousal: 5, tension: 3, affiliation: 6 },
+      relationship_narrative: "Friendly acquaintances",
+      love_from_agent: 50,
+      love_from_user: 45,
+      loaded_facts: [
+        { atomic_text: "User likes coffee", fact_type: "preference" },
+      ],
+      active_goals: [],
+      habits: [],
+      game_context: {},
+    }),
+    turn: vi.fn().mockResolvedValue({ success: true, extraction_id: "ext-1", extraction_status: "queued" }),
+    status: vi.fn().mockResolvedValue({ extraction_id: "ext-1", state: "done" }),
+    end: vi.fn().mockResolvedValue({ success: true }),
+  };
+}
+
+function createMockClient() {
+  const mockSession = createMockSession();
+  return {
+    /** Exposed for assertions: spies on the bound Session handle. */
+    mockSession,
     agents: {
       create: vi.fn().mockResolvedValue({ agent_id: "agent-123", name: "test-agent" }),
       sessions: {
-        start: vi.fn().mockResolvedValue({ session_id: "sess-1" }),
-        end: vi.fn().mockResolvedValue({ session_id: "sess-1" }),
+        // Returns the Session handle; engine pins it on SessionState.handle
+        // and routes context()/turn()/end() through it.
+        start: vi.fn().mockResolvedValue(mockSession),
       },
-      getContext: vi.fn().mockResolvedValue({
-        personality_prompt: "You are a helpful agent",
-        speech_patterns: ["uses metaphors"],
-        true_interests: ["coffee", "hiking"],
-        primary_traits: ["helpful", "curious"],
-        big5: {
-          openness: { score: 70 },
-          conscientiousness: { score: 60 },
-          extraversion: { score: 50 },
-          agreeableness: { score: 80 },
-          neuroticism: { score: 30 },
-        },
-        preferences: { pace: "moderate", formality: "casual", humor_style: "warm" },
-        current_mood: { valence: 7, arousal: 5, tension: 3, affiliation: 6 },
-        relationship_narrative: "Friendly acquaintances",
-        love_from_agent: 50,
-        love_from_user: 45,
-        loaded_facts: [
-          { atomic_text: "User likes coffee", fact_type: "preference" },
-        ],
-        active_goals: [],
-        habits: [],
-        game_context: {},
-      }),
       consolidate: vi.fn().mockResolvedValue({}),
-      process: vi.fn().mockResolvedValue({ success: true, memories_created: 2, facts_extracted: 3, side_effects: { mood_updated: true, personality_updated: false, habits_observed: 0, interests_detected: 1 } }),
       updateCapabilities: vi.fn().mockResolvedValue({}),
     },
-  } as unknown;
+  } as unknown as {
+    mockSession: ReturnType<typeof createMockSession>;
+    agents: any;
+  };
 }
 
 function createConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -211,10 +231,10 @@ describe("SonzaiContextEngine", () => {
       expect(result.systemPromptAddition).toContain("User likes coffee");
       expect(result.estimatedTokens).toBeGreaterThan(0);
 
-      // Verify single getContext call was made (replaces 7 individual calls)
-      expect((client as any).agents.getContext).toHaveBeenCalledOnce();
-      expect((client as any).agents.getContext).toHaveBeenCalledWith(
-        "agent-123",
+      // Verify the single context() call on the bound Session handle —
+      // identity is pre-filled so only query-side params are passed.
+      expect((client as any).mockSession.context).toHaveBeenCalledOnce();
+      expect((client as any).mockSession.context).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "owner",
           query: "Tell me about coffee",
@@ -223,7 +243,7 @@ describe("SonzaiContextEngine", () => {
     });
 
     it("degrades gracefully when API calls fail", async () => {
-      (client as any).agents.getContext.mockRejectedValue(new Error("timeout"));
+      (client as any).mockSession.context.mockRejectedValue(new Error("timeout"));
 
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
 
@@ -264,7 +284,7 @@ describe("SonzaiContextEngine", () => {
   });
 
   describe("afterTurn", () => {
-    it("calls process() with new messages", async () => {
+    it("calls session.turn() with new messages", async () => {
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
 
       // Simulate an assemble call first (which sets lastMessages)
@@ -278,15 +298,14 @@ describe("SonzaiContextEngine", () => {
         tokenBudget: 2000,
       });
 
-      (client as any).agents.process.mockClear();
+      (client as any).mockSession.turn.mockClear();
 
       await engine.afterTurn({ sessionId: "agent:abc:mainKey" });
 
-      expect((client as any).agents.process).toHaveBeenCalledWith(
-        "agent-123",
+      // Identity is on the handle; only messages + provider/model
+      // overrides go on the call body.
+      expect((client as any).mockSession.turn).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: "owner",
-          sessionId: "agent:abc:mainKey",
           messages: [
             { role: "user", content: "hello" },
             { role: "assistant", content: "hi there" },
@@ -295,36 +314,42 @@ describe("SonzaiContextEngine", () => {
       );
     });
 
-    it("does not call process when no new messages", async () => {
+    it("does not call session.turn when no new messages", async () => {
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
-      (client as any).agents.process.mockClear();
+      (client as any).mockSession.turn.mockClear();
 
       // afterTurn without any assemble (no messages)
       await engine.afterTurn({ sessionId: "agent:abc:mainKey" });
 
-      expect((client as any).agents.process).not.toHaveBeenCalled();
+      expect((client as any).mockSession.turn).not.toHaveBeenCalled();
     });
   });
 
   describe("dispose", () => {
     it("ends all active sessions and clears state", async () => {
       await engine.bootstrap({ sessionId: "agent:abc:mainKey" });
-      (client as any).agents.sessions.end.mockClear();
+      (client as any).mockSession.end.mockClear();
 
       await engine.dispose();
 
-      expect((client as any).agents.sessions.end).toHaveBeenCalledTimes(1);
+      expect((client as any).mockSession.end).toHaveBeenCalledTimes(1);
     });
   });
 });
 
 describe("SonzaiContextEngine.assemble", () => {
   it("skips context fetch on the session-reset boilerplate prompt", async () => {
-    const getContext = vi.fn();
+    const sessionContext = vi.fn();
+    const sessionHandle = {
+      success: true,
+      context: sessionContext,
+      turn: vi.fn().mockResolvedValue({ success: true, extraction_id: "x", extraction_status: "queued" }),
+      status: vi.fn(),
+      end: vi.fn().mockResolvedValue({ success: true }),
+    };
     const mockClient = {
       agents: {
-        sessions: { start: vi.fn().mockResolvedValue({}) },
-        getContext,
+        sessions: { start: vi.fn().mockResolvedValue(sessionHandle) },
         updateCapabilities: vi.fn().mockResolvedValue({}),
       },
     } as unknown as import("@sonzai-labs/agents").Sonzai;
@@ -350,7 +375,7 @@ describe("SonzaiContextEngine.assemble", () => {
       tokenBudget: 4000,
     });
 
-    expect(getContext).not.toHaveBeenCalled();
+    expect(sessionContext).not.toHaveBeenCalled();
     expect(result.estimatedTokens).toBe(0);
     expect(result.systemPromptAddition).toBeUndefined();
   });
@@ -358,11 +383,17 @@ describe("SonzaiContextEngine.assemble", () => {
 
 describe("SonzaiContextEngine.afterTurn pollution guard", () => {
   it("strips our own injected context from user messages before fact extraction", async () => {
-    const process = vi.fn().mockResolvedValue({});
+    const turn = vi.fn().mockResolvedValue({ success: true, extraction_id: "x", extraction_status: "queued" });
+    const sessionHandle = {
+      success: true,
+      context: vi.fn().mockResolvedValue({}),
+      turn,
+      status: vi.fn(),
+      end: vi.fn().mockResolvedValue({ success: true }),
+    };
     const mockClient = {
       agents: {
-        sessions: { start: vi.fn().mockResolvedValue({}) },
-        process,
+        sessions: { start: vi.fn().mockResolvedValue(sessionHandle) },
         updateCapabilities: vi.fn().mockResolvedValue({}),
       },
     } as unknown as import("@sonzai-labs/agents").Sonzai;
@@ -393,8 +424,10 @@ describe("SonzaiContextEngine.afterTurn pollution guard", () => {
 
     await engine.afterTurn({ sessionId: "agent:agent-1:main" });
 
-    expect(process).toHaveBeenCalledOnce();
-    const [, payload] = process.mock.calls[0]!;
+    expect(turn).toHaveBeenCalledOnce();
+    // session.turn() takes a single options object — payload.messages
+    // is on arg 0 (no agentId prefix like the legacy .process(agentId, opts)).
+    const [payload] = turn.mock.calls[0]!;
     expect(payload.messages[0].content).toBe("What do I like?");
     expect(payload.messages[0].content).not.toContain("sonzai-context");
   });

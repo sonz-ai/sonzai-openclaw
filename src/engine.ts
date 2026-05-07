@@ -54,13 +54,21 @@ export class SonzaiContextEngine implements ContextEngine {
 
       await this.enforceMemoryMode(agentId);
 
-      // Start a Sonzai session
-      await this.client.agents.sessions.start(agentId, {
+      // Start a Sonzai session — returns a Session handle that bundles
+      // agentId/userId/sessionId so context()/turn()/end() don't have
+      // to repeat them on every per-turn call. Only forward provider/
+      // model when configured so the wire payload stays clean and the
+      // server-side resolver picks the tenant default.
+      const startOpts: { userId: string; sessionId: string; provider?: string; model?: string } = {
         userId: parsed.userId,
         sessionId,
-      });
+      };
+      if (this.config.extractionProvider) startOpts.provider = this.config.extractionProvider;
+      if (this.config.extractionModel) startOpts.model = this.config.extractionModel;
+      const handle = await this.client.agents.sessions.start(agentId, startOpts);
 
       this.sessions.set(sessionId, {
+        handle,
         agentId,
         userId: parsed.userId,
         sonzaiSessionId: sessionId,
@@ -101,7 +109,7 @@ export class SonzaiContextEngine implements ContextEngine {
     session.lastMessages = messages;
 
     try {
-      const { agentId, userId } = session;
+      const { userId } = session;
       const lastUserMsg = findLastUserMessage(messages);
       if (isSessionResetPrompt(lastUserMsg)) {
         return { messages, estimatedTokens: 0 };
@@ -114,13 +122,14 @@ export class SonzaiContextEngine implements ContextEngine {
           ? `${origin.provider}:${origin.from}`
           : userId;
 
-      // Single API call replaces 7 parallel calls — server-side caching
-      // handles profile (5min), behavioral (30s), constellation (5min),
-      // and memory (2h session cache) acceleration.
+      // Single API call via the bound Session handle — pulls all 7 layers
+      // in one round-trip. Server-side caching handles profile (5min),
+      // behavioral (30s), constellation (5min), and memory (2h session
+      // cache) acceleration. userId override here covers the group-chat
+      // case without losing the handle's session-level defaults.
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const context = await this.client.agents.getContext(agentId, {
+      const context = await session.handle.context({
         userId: effectiveUserId,
-        sessionId: session.sonzaiSessionId,
         query: lastUserMsg,
         timezone,
       });
@@ -183,11 +192,14 @@ export class SonzaiContextEngine implements ContextEngine {
 
       if (newMessages.length === 0) return;
 
-      await this.client.agents.process(session.agentId, {
-        userId: session.userId,
-        sessionId: session.sonzaiSessionId,
+      // Submit the turn via the session handle — runs the same CE pipeline
+      // as the legacy /process endpoint, but session-scoped and returning
+      // an extraction_id we could poll if a caller ever wants to wait
+      // for memory write-back to land. We don't poll here (best-effort
+      // fire-and-forget matches the prior /process behaviour).
+      await session.handle.turn({
         messages: newMessages.map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
+          role: m.role,
           content: m.role === "user" ? stripInjectedContext(m.content) : m.content,
         })),
         provider: this.config.extractionProvider,
@@ -206,9 +218,7 @@ export class SonzaiContextEngine implements ContextEngine {
     const endPromises = [...this.sessions.entries()].map(
       async ([_sessionId, session]) => {
         try {
-          await this.client.agents.sessions.end(session.agentId, {
-            userId: session.userId,
-            sessionId: session.sonzaiSessionId,
+          await session.handle.end({
             totalMessages: session.turnCount,
             durationSeconds: Math.floor(
               (Date.now() - session.startedAt) / 1000,

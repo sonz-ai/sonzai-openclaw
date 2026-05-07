@@ -105,7 +105,15 @@ export interface PluginAPI {
 // Internal session state tracked by the engine
 // ---------------------------------------------------------------------------
 
+// Imported lazily via type-only import below to avoid pulling the SDK at
+// runtime when the plugin's types are imported (e.g. in OpenClaw's plugin
+// loader). The handle drives the per-turn loop: .context() before each turn,
+// .turn() after each turn, .end() on dispose.
+import type { Session } from "@sonzai-labs/agents";
+
 export interface SessionState {
+  /** Bound Sonzai session handle — context()/turn()/end() pre-fill identity. */
+  handle: Session;
   agentId: string;
   userId: string;
   sonzaiSessionId: string;

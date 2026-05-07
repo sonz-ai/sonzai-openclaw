@@ -1,6 +1,6 @@
 {
   "name": "@sonzai-labs/openclaw-context",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "description": "OpenClaw ContextEngine plugin for the Sonzai Mind Layer — gives OpenClaw agents hierarchical memory, personality evolution, mood tracking, and fact extraction",
   "license": "MIT",
   "author": "Sonzai Labs <engineering@sonz.ai>",

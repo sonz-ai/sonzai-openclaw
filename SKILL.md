@@ -307,7 +307,7 @@ All settings in `~/.openclaw/openclaw.json` under `plugins.entries.sonzai`:
 | `contextTokenBudget` | — | `2000` | Max tokens for context injection |
 | `memoryMode` | `SONZAI_MEMORY_MODE` | `sync` | Memory recall timing — `sync` (default, per-turn completeness) or `async` (lower first-token latency, slow hits may spill to next turn). Enforced on every bootstrap. |
 | `extractionProvider` | `SONZAI_EXTRACTION_PROVIDER` | `gemini` | Optional. LLM provider for fact extraction. Override to use `openai`, `anthropic`, etc. |
-| `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite-preview` | Optional. LLM model for fact extraction — this is the default extraction floor. Override with `gemini-3.1-pro-preview` etc. to trade latency for quality. |
+| `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite` | Optional. LLM model for fact extraction — this is the default extraction floor. Override with `gemini-3.1-pro-preview` etc. to trade latency for quality. |
 | `disable.{mood,personality,relationships,memory,goals,interests,habits,knowledge}` | — | `false` | Skip specific context sections |
 
 ---

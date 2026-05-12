@@ -224,7 +224,7 @@ All settings go in `openclaw.json` under `plugins.entries.sonzai`. Environment v
 | `disable.habits` | — | `false` | Skip habits context |
 | `disable.knowledge` | — | `false` | Skip knowledge-base context |
 | `extractionProvider` | `SONZAI_EXTRACTION_PROVIDER` | `gemini` | LLM provider used for fact extraction. Optional. Override to route extraction through `openai`, `anthropic`, etc. |
-| `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite-preview` | LLM model used for fact extraction. Optional — this is the default floor. Override with a heavier model like `gemini-3.1-pro-preview` to trade latency/cost for extraction quality. |
+| `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite` | LLM model used for fact extraction. Optional — this is the default floor. Override with a heavier model like `gemini-3.1-pro-preview` to trade latency/cost for extraction quality. |
 
 ### Switching memory mode
 

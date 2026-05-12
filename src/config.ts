@@ -53,7 +53,7 @@ export interface SonzaiPluginConfig {
   extractionProvider?: string;
   /**
    * LLM model for side-effect fact extraction. Optional — the Sonzai backend
-   * defaults to `gemini-3.1-flash-lite-preview` if omitted (the extraction
+   * defaults to `gemini-3.1-flash-lite` if omitted (the extraction
    * floor). Override with a heavier model like `gemini-3.1-pro-preview` to
    * trade latency/cost for extraction quality.
    */

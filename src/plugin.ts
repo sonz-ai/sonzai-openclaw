@@ -120,8 +120,16 @@ function registerSonzaiTools(
         const agentId = await getAgentId();
         const query = String(params.query || "");
 
+        // Memory facts are per-user — without user_id the server falls
+        // back to the unscoped row and returns either nothing or facts
+        // from a different user. We don't have access to the current
+        // session's userId here (tool callbacks run outside the engine's
+        // session-tracking map), so pass the configured defaultUserId
+        // — the same identity bootstrap() uses for single-peer CLI
+        // sessions where the session key has no explicit user segment.
         const response = await client.agents.memory.search(agentId, {
           query,
+          user_id: config.defaultUserId,
         });
 
         if (!response.results || response.results.length === 0) {

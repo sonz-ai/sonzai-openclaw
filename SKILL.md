@@ -309,6 +309,8 @@ All settings in `~/.openclaw/openclaw.json` under `plugins.entries.sonzai`:
 | `extractionProvider` | `SONZAI_EXTRACTION_PROVIDER` | `gemini` | Optional. LLM provider for fact extraction. Override to use `openai`, `anthropic`, etc. |
 | `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite` | Optional. LLM model for fact extraction — this is the default extraction floor. Override with `gemini-3.1-pro-preview` etc. to trade latency for quality. |
 | `disable.{mood,personality,relationships,memory,goals,interests,habits,knowledge}` | — | `false` | Skip specific context sections |
+| `projectId` | `SONZAI_PROJECT_ID` | auto-discover | BYOK target project. Falls back to tenant's `Default` project. |
+| `byok.{openai,gemini,xai,openrouter}` | `SONZAI_BYOK_<PROVIDER>_KEY` → `<PROVIDER>_API_KEY` | — | Customer-provided LLM keys. If set, registered with Sonzai on startup; you pay only the 25% service fee instead of the 125% markup. Fire-and-forget; failures only warn. |
 
 ---
 

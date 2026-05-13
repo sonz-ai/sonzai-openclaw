@@ -11,6 +11,20 @@ describe("resolveConfig", () => {
     delete process.env.SONZAI_BASE_URL;
     delete process.env.SONZAI_AGENT_NAME;
     delete process.env.SONZAI_MEMORY_MODE;
+    delete process.env.SONZAI_PROJECT_ID;
+    for (const v of [
+      "SONZAI_BYOK_OPENAI_KEY",
+      "SONZAI_BYOK_GEMINI_KEY",
+      "SONZAI_BYOK_XAI_KEY",
+      "SONZAI_BYOK_OPENROUTER_KEY",
+      "OPENAI_API_KEY",
+      "GEMINI_API_KEY",
+      "GOOGLE_API_KEY",
+      "XAI_API_KEY",
+      "OPENROUTER_API_KEY",
+    ]) {
+      delete process.env[v];
+    }
   });
 
   afterEach(() => {
@@ -118,6 +132,93 @@ describe("resolveConfig", () => {
       expect(() => resolveConfig({ apiKey: "sk-test" })).toThrow(
         "Invalid memoryMode",
       );
+    });
+  });
+
+  describe("projectId", () => {
+    it("defaults to undefined", () => {
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.projectId).toBeUndefined();
+    });
+
+    it("reads from config", () => {
+      const config = resolveConfig({ apiKey: "sk-test", projectId: "proj-abc" });
+      expect(config.projectId).toBe("proj-abc");
+    });
+
+    it("reads from SONZAI_PROJECT_ID env var", () => {
+      process.env.SONZAI_PROJECT_ID = "proj-env";
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.projectId).toBe("proj-env");
+    });
+
+    it("config takes precedence over env var", () => {
+      process.env.SONZAI_PROJECT_ID = "proj-env";
+      const config = resolveConfig({ apiKey: "sk-test", projectId: "proj-config" });
+      expect(config.projectId).toBe("proj-config");
+    });
+  });
+
+  describe("byok", () => {
+    it("defaults to empty object when nothing set", () => {
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.byok).toEqual({});
+    });
+
+    it("reads each provider from namespaced env var", () => {
+      process.env.SONZAI_BYOK_OPENAI_KEY = "sk-ns-openai";
+      process.env.SONZAI_BYOK_GEMINI_KEY = "sk-ns-gemini";
+      process.env.SONZAI_BYOK_XAI_KEY = "sk-ns-xai";
+      process.env.SONZAI_BYOK_OPENROUTER_KEY = "sk-ns-or";
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.byok).toEqual({
+        openai: "sk-ns-openai",
+        gemini: "sk-ns-gemini",
+        xai: "sk-ns-xai",
+        openrouter: "sk-ns-or",
+      });
+    });
+
+    it("falls back to standard provider env vars when namespaced not set", () => {
+      process.env.OPENAI_API_KEY = "sk-std-openai";
+      process.env.GEMINI_API_KEY = "sk-std-gemini";
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.byok).toEqual({
+        openai: "sk-std-openai",
+        gemini: "sk-std-gemini",
+      });
+    });
+
+    it("namespaced env var takes precedence over standard", () => {
+      process.env.SONZAI_BYOK_OPENAI_KEY = "sk-ns";
+      process.env.OPENAI_API_KEY = "sk-std";
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.byok.openai).toBe("sk-ns");
+    });
+
+    it("gemini falls back to GOOGLE_API_KEY when GEMINI_API_KEY missing", () => {
+      process.env.GOOGLE_API_KEY = "sk-google";
+      const config = resolveConfig({ apiKey: "sk-test" });
+      expect(config.byok.gemini).toBe("sk-google");
+    });
+
+    it("config takes precedence over all env vars", () => {
+      process.env.SONZAI_BYOK_OPENAI_KEY = "sk-ns";
+      process.env.OPENAI_API_KEY = "sk-std";
+      const config = resolveConfig({
+        apiKey: "sk-test",
+        byok: { openai: "sk-config" },
+      });
+      expect(config.byok.openai).toBe("sk-config");
+    });
+
+    it("ignores unknown providers in config", () => {
+      const config = resolveConfig({
+        apiKey: "sk-test",
+        // @ts-expect-error testing runtime behavior with bogus provider
+        byok: { anthropic: "sk-not-supported", openai: "sk-ok" },
+      });
+      expect(config.byok).toEqual({ openai: "sk-ok" });
     });
   });
 });

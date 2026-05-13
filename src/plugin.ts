@@ -7,6 +7,7 @@
 
 import { Sonzai } from "@sonzai-labs/agents";
 import { resolveConfig } from "./config.js";
+import { registerByokKeys } from "./byok.js";
 import { SonzaiContextEngine } from "./engine.js";
 import type { PluginAPI, ContextEngine } from "./types.js";
 
@@ -16,6 +17,10 @@ export default function register(api: PluginAPI): void {
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
   });
+
+  // ── BYOK registration ── fire-and-forget; failures only warn.
+  // No keys configured → no-op, no network call.
+  void registerByokKeys(client, config);
 
   // ── Context Engine ──
   api.registerContextEngine("sonzai", (): ContextEngine => {

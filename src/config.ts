@@ -22,6 +22,14 @@ export interface DisableMap {
 
 export type MemoryMode = "sync" | "async";
 
+/**
+ * BYOK provider names accepted by the Sonzai platform.
+ * Must stay in sync with the BYOKProvider type in @sonzai-labs/agents.
+ */
+export type ByokProvider = "openai" | "gemini" | "xai" | "openrouter";
+
+export type ByokKeys = Partial<Record<ByokProvider, string>>;
+
 export interface SonzaiPluginConfig {
   /** Sonzai API key (sk-...). Required. */
   apiKey: string;
@@ -72,6 +80,32 @@ export interface SonzaiPluginConfig {
    * take effect on the next session start without manual agent updates.
    */
   memoryMode?: MemoryMode;
+  /**
+   * Sonzai project UUID for BYOK (bring-your-own-key) registration.
+   *
+   * Only required when `byok` keys are configured. If omitted, the plugin
+   * auto-discovers the tenant's "Default" project via projects.list().
+   * Override here if your API key is scoped to a non-Default project.
+   *
+   * Resolved from `SONZAI_PROJECT_ID` env var when not in config.
+   */
+  projectId?: string;
+  /**
+   * Customer-provided LLM provider API keys. When set, openclaw registers
+   * them with the Sonzai platform on startup via the BYOK endpoint; the
+   * platform then uses your key for upstream LLM calls and bills you only
+   * its 25% service fee instead of the full 125% markup.
+   *
+   * Per-provider resolution precedence (highest to lowest):
+   *   1. `byok.<provider>` in config / openclaw.json
+   *   2. `SONZAI_BYOK_<PROVIDER>_KEY` env var (namespaced, recommended)
+   *   3. `<PROVIDER>_API_KEY` env var (standard, may be shared with other tools)
+   *
+   * Registration is fire-and-forget on bootstrap; failures are logged but
+   * do not block plugin startup. Re-runs each registration on every plugin
+   * load (idempotent via PUT semantics on the platform).
+   */
+  byok?: ByokKeys;
 }
 
 export interface ResolvedConfig {
@@ -85,7 +119,23 @@ export interface ResolvedConfig {
   extractionProvider: string | undefined;
   extractionModel: string | undefined;
   memoryMode: MemoryMode;
+  projectId: string | undefined;
+  byok: ByokKeys;
 }
+
+const BYOK_PROVIDERS: readonly ByokProvider[] = ["openai", "gemini", "xai", "openrouter"] as const;
+
+/**
+ * Standard provider env-var names, used as the lowest-precedence fallback.
+ * Gemini accepts both GEMINI_API_KEY (Google AI Studio convention) and
+ * GOOGLE_API_KEY (broader Google ecosystem); namespaced overrides win.
+ */
+const STANDARD_ENV_NAMES: Record<ByokProvider, readonly string[]> = {
+  openai: ["OPENAI_API_KEY"],
+  gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  xai: ["XAI_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+};
 
 const DEFAULTS = {
   baseUrl: "https://api.sonz.ai",
@@ -149,7 +199,42 @@ export function resolveConfig(
     extractionProvider: raw?.extractionProvider || file.extractionProvider || env("SONZAI_EXTRACTION_PROVIDER") || undefined,
     extractionModel: raw?.extractionModel || file.extractionModel || env("SONZAI_EXTRACTION_MODEL") || undefined,
     memoryMode: resolveMemoryMode(raw?.memoryMode, file.memoryMode, env("SONZAI_MEMORY_MODE")),
+    projectId: raw?.projectId || file.projectId || env("SONZAI_PROJECT_ID") || undefined,
+    byok: resolveByokKeys(raw?.byok, file.byok),
   };
+}
+
+/**
+ * Resolve BYOK keys per provider with the documented precedence:
+ *   config/openclaw.json → SONZAI_BYOK_<PROVIDER>_KEY → <PROVIDER>_API_KEY.
+ * Returns only providers with a non-empty key — easy to test for emptiness
+ * with Object.keys(byok).length.
+ */
+function resolveByokKeys(
+  raw: ByokKeys | undefined,
+  file: ByokKeys | undefined,
+): ByokKeys {
+  const result: ByokKeys = {};
+  for (const provider of BYOK_PROVIDERS) {
+    const fromConfig = raw?.[provider] || file?.[provider];
+    if (fromConfig) {
+      result[provider] = fromConfig;
+      continue;
+    }
+    const namespaced = env(`SONZAI_BYOK_${provider.toUpperCase()}_KEY`);
+    if (namespaced) {
+      result[provider] = namespaced;
+      continue;
+    }
+    for (const name of STANDARD_ENV_NAMES[provider]) {
+      const v = env(name);
+      if (v) {
+        result[provider] = v;
+        break;
+      }
+    }
+  }
+  return result;
 }
 
 function resolveMemoryMode(

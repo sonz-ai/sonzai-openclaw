@@ -225,6 +225,37 @@ All settings go in `openclaw.json` under `plugins.entries.sonzai`. Environment v
 | `disable.knowledge` | — | `false` | Skip knowledge-base context |
 | `extractionProvider` | `SONZAI_EXTRACTION_PROVIDER` | `gemini` | LLM provider used for fact extraction. Optional. Override to route extraction through `openai`, `anthropic`, etc. |
 | `extractionModel` | `SONZAI_EXTRACTION_MODEL` | `gemini-3.1-flash-lite` | LLM model used for fact extraction. Optional — this is the default floor. Override with a heavier model like `gemini-3.1-pro-preview` to trade latency/cost for extraction quality. |
+| `projectId` | `SONZAI_PROJECT_ID` | auto-discover | Sonzai project UUID. Only consulted when `byok` keys are set. If omitted, the plugin uses the tenant's `Default` project. |
+| `byok.openai` | `SONZAI_BYOK_OPENAI_KEY` → `OPENAI_API_KEY` | — | Customer-provided OpenAI key. See [Bring Your Own Key](#bring-your-own-key-byok). |
+| `byok.gemini` | `SONZAI_BYOK_GEMINI_KEY` → `GEMINI_API_KEY` → `GOOGLE_API_KEY` | — | Customer-provided Gemini key. |
+| `byok.xai` | `SONZAI_BYOK_XAI_KEY` → `XAI_API_KEY` | — | Customer-provided xAI key. |
+| `byok.openrouter` | `SONZAI_BYOK_OPENROUTER_KEY` → `OPENROUTER_API_KEY` | — | Customer-provided OpenRouter key. |
+
+## Bring Your Own Key (BYOK)
+
+If you set any provider keys under `byok`, openclaw registers them with the
+Sonzai platform on startup. Sonzai then uses **your** key for upstream LLM
+calls and bills you only its **25% service fee** instead of the full 125%
+platform markup.
+
+Supported providers: `openai`, `gemini`, `xai`, `openrouter`. Pick whichever
+provider you've also configured as `extractionProvider` — that's the one
+Sonzai will route fact extraction through.
+
+```bash
+# Namespaced (recommended — won't get hijacked by unrelated tools)
+export SONZAI_BYOK_OPENAI_KEY=sk-proj-...
+# or standard provider env vars also work as a fallback:
+export OPENAI_API_KEY=sk-proj-...
+
+# Optional — only needed if your API key is scoped to a non-Default project
+export SONZAI_PROJECT_ID=00000000-0000-0000-0000-000000000000
+```
+
+Registration runs **fire-and-forget** on every plugin load. Failures (bad
+key, network error, missing project access) are logged but do not block
+plugin startup. The platform PUT is idempotent, so re-runs are cheap — just
+update the env var and restart to rotate.
 
 ### Switching memory mode
 
